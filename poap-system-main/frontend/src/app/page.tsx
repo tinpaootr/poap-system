@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { Calendar, QrCode, Award } from 'lucide-react';
-import { ConnectWalletButton } from './components/ConnectWalletButton';
-
+import { ConnectWalletButton } from '@/components/ConnectWalletButton';
 export default function Home() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
