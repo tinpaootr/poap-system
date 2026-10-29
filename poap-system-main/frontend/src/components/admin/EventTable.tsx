@@ -21,7 +21,7 @@ export default function EventTable({
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const filteredEvents = events.filter((ev) => {
-    const matchesSearch = ev.title
+    const matchesSearch = ev.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
     const matchesStatus =
@@ -47,9 +47,9 @@ export default function EventTable({
           <div className="flex items-center bg-[#0b1326] p-1 rounded-xl border border-slate-800 text-xs">
             {[
               { id: "all", label: "Tất cả" },
-              { id: "live", label: "Đang mở" },
+              { id: "open", label: "Đang mở" },
               { id: "upcoming", label: "Sắp diễn ra" },
-              { id: "ended", label: "Đã kết thúc" },
+              { id: "closed", label: "Đã kết thúc" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -93,10 +93,10 @@ export default function EventTable({
           </thead>
           <tbody className="divide-y divide-slate-800/70 text-sm">
             {filteredEvents.map((ev) => {
-              const isSelected = ev.id === activeEventId;
+              const isSelected = ev._id === activeEventId;
               return (
                 <tr
-                  key={ev.id}
+                  key={ev._id}
                   className={`transition-colors ${
                     isSelected
                       ? "bg-indigo-500/10"
@@ -106,17 +106,17 @@ export default function EventTable({
                   {/* Cột 1: Ảnh Badge + Tên sự kiện */}
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={ev.badgeImage}
-                        alt={ev.title}
-                        className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
-                      />
+                  <img
+                    src={ev.ipfsImageHash?.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")}
+                    alt={ev.name}
+                    className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
+                  />
                       <div>
                         <p className="font-semibold text-white line-clamp-1">
-                          {ev.title}
+                          {ev.name}
                         </p>
                         <span className="text-xs font-mono text-slate-400">
-                          ID: {ev.id} • Contract: {ev.contractAddress}
+                          ID: {ev._id} • Contract: {ev.contractAddress}
                         </span>
                       </div>
                     </div>
@@ -124,7 +124,7 @@ export default function EventTable({
 
                   {/* Cột 2: Thời gian */}
                   <td className="py-4 px-4 whitespace-nowrap text-slate-300 text-xs">
-                    {ev.datetime}
+                    {ev.time}
                   </td>
 
                   {/* Cột 3: Số lượng */}
@@ -140,7 +140,7 @@ export default function EventTable({
 
                   {/* Cột 4: Nhãn Trạng thái */}
                   <td className="py-4 px-4 whitespace-nowrap">
-                    {ev.status === "live" && (
+                    {ev.status === "open" && (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-xs font-medium border border-emerald-500/20">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                         Đang mở điểm danh
@@ -152,7 +152,7 @@ export default function EventTable({
                         Sắp diễn ra
                       </span>
                     )}
-                    {ev.status === "ended" && (
+                    {ev.status === "closed" && (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-400 text-xs font-medium">
                         <CheckCircle className="w-3.5 h-3.5" />
                         Đã kết thúc
@@ -163,7 +163,7 @@ export default function EventTable({
                   {/* Cột 5: Nút thao tác */}
                   <td className="py-4 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-2">
-                      {ev.status === "live" && (
+                      {ev.status === "open" && (
                         <>
                           <button
                             onClick={() => onSelectForQr(ev, true)}
@@ -173,7 +173,7 @@ export default function EventTable({
                             <span>Trình chiếu</span>
                           </button>
                           <button
-                            onClick={() => onUpdateStatus(ev.id, "ended")}
+                            onClick={() => onUpdateStatus(ev._id, "closed")}
                             title="Kết thúc điểm danh"
                             className="p-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg transition"
                           >
@@ -185,8 +185,8 @@ export default function EventTable({
                       {ev.status === "upcoming" && (
                         <button
                           onClick={() => {
-                            onUpdateStatus(ev.id, "live");
-                            onSelectForQr({ ...ev, status: "live" }, false);
+                            onUpdateStatus(ev._id, "open");
+                            onSelectForQr({ ...ev, status: "open" }, false);
                           }}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-semibold transition"
                         >
@@ -195,11 +195,11 @@ export default function EventTable({
                         </button>
                       )}
 
-                      {ev.status === "ended" && (
+                      {ev.status === "closed" && (
                         <button
                           onClick={() => {
-                            onUpdateStatus(ev.id, "live");
-                            onSelectForQr({ ...ev, status: "live" }, false);
+                            onUpdateStatus(ev._id, "open");
+                            onSelectForQr({ ...ev, status: "open" }, false);
                           }}
                           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
                         >

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-import Navbar from '@/components/share/Navbar'; // Đổi đường dẫn này nếu Navbar của bạn nằm ở thư mục khác (vd: '@/components/share/Navbar')
+import Navbar from '@/components/share/Navbar';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -18,6 +18,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
+      <head>
+        <link 
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" 
+          rel="stylesheet" 
+        />
+      </head>
       <body className={inter.className}>
         <Providers>
           <Navbar />

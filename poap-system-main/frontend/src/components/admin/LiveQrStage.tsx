@@ -53,11 +53,11 @@ export default function LiveQrStage({
   // Đổi mã ngay khi chuyển sang sự kiện khác
   useEffect(() => {
     generateNewQrToken();
-  }, [activeEvent.id, generateNewQrToken]);
+  }, [activeEvent._id, generateNewQrToken]);
 
   // Đồng hồ đếm ngược
   useEffect(() => {
-    if (isPaused || activeEvent.status !== "live") return;
+    if (isPaused || activeEvent.status !== "open") return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -112,14 +112,14 @@ export default function LiveQrStage({
           <div className="mt-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono text-indigo-400">
-                Mã SK: {activeEvent.id}
+                Mã SK: {activeEvent._id}
               </span>
               <span className="text-xs text-emerald-400 flex items-center gap-1">
                 ● Đang mở điểm danh
               </span>
             </div>
             <h3 className="text-base font-bold text-white mt-1 line-clamp-1">
-              {activeEvent.title}
+              {activeEvent.name}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
               Mã QR tự động đổi mỗi {MAX_TIME}s chống chụp màn hình gửi ra ngoài.
@@ -234,7 +234,7 @@ export default function LiveQrStage({
                 TRỰC TIẾP TRÊN MÁY CHIẾU HỘI TRƯỜNG
               </div>
               <h2 className="text-lg md:text-xl font-bold text-white">
-                {activeEvent.title}
+                {activeEvent.name}
               </h2>
             </div>
 

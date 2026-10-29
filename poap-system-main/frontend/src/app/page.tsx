@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Calendar, QrCode, Award } from 'lucide-react';
 import { ConnectWalletButton } from '@/components/ConnectWalletButton';
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
@@ -32,13 +33,13 @@ export default function Home() {
             <p className="text-slate-400 text-sm">Tạo sự kiện, upload hình ảnh huy hiệu và xuất mã QR điểm danh động.</p>
           </Link>
 
-          <Link href="/claim/demo-event" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
+          <Link href="/checkin" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
             <QrCode className="h-8 w-8 text-purple-400 mb-4" />
             <h3 className="font-bold text-xl mb-2">Sinh Viên Điểm Danh</h3>
             <p className="text-slate-400 text-sm">Quét mã QR tại hội thảo, kết nối MetaMask để nhận huy hiệu NFT.</p>
           </Link>
 
-          <Link href="/profile" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
+          <Link href="/collection" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
             <Award className="h-8 w-8 text-pink-400 mb-4" />
             <h3 className="font-bold text-xl mb-2">Bộ Sưu Tập Cá Nhân</h3>
             <p className="text-slate-400 text-sm">Xem lại toàn bộ các huy hiệu chứng nhận ngoại khóa đã tích lũy.</p>
