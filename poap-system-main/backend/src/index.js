@@ -7,6 +7,7 @@ const mongoose = require('mongoose'); // Import Mongoose để kết nối DB
 require('dotenv').config();
 
 const eventRoutes = require('./routes/events');
+const collectionRoutes = require('./routes/collection'); // <-- THÊM: Người 3 - Bộ sưu tập
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,6 +29,9 @@ app.get('/api', (req, res) => {
 
 // API xử lý Sự kiện & Sinh mã QR
 app.use('/api/events', eventRoutes);
+
+// API Bộ sưu tập cá nhân (Người 3)                          // <-- THÊM
+app.use('/api/collection', collectionRoutes);                // <-- THÊM
 
 // 4. KHỞI CHẠY SERVER
 app.listen(PORT, () => {
