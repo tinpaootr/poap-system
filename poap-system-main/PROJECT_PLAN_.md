@@ -130,11 +130,27 @@ club-poap-system/
   - Bổ sung Nút **"Đổi Mã Ngay" (Panic Button)**: Gọi API mới ép đổi toàn bộ `qrSecret` để giết mã cũ ngay lập tức nếu bị chụp lén.
 - [x] **Clean code & Tối ưu:** Dọn dẹp sạch sẽ các cảnh báo rác của Mongoose (vụ `deprecated new: true`) và Webpack (vụ thư viện `ox`).
 
+====================
+== Ngày 01/11/2026: ==
+====================
+
+**B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
+- [x] **Sửa lỗi 404 khi Claim:** Mã dự phòng trên màn chiếu chỉ hiển thị 4/6 số của mã TOTP nên Backend không xác thực được. Đã sửa `LiveQrStage.tsx` hiển thị đủ 6 số (`#POAP-XXXXXX`).
+- [x] **Hoàn thiện 3 phương thức điểm danh (`ScannerPanel.tsx`)** — trước đây chỉ là giao diện mẫu:
+  - **Nhập mã dự phòng:** Chấp nhận `#POAP-123456`, `123456` hoặc dán link QR.
+  - **Quét bằng Camera:** Dùng thư viện `html5-qrcode`, có chọn camera, bỏ qua camera ảo, báo lỗi rõ ràng.
+  - **Tải ảnh QR:** Đọc mã QR trực tiếp từ ảnh (PNG, JPG, WEBP).
+- [x] **Quét bằng camera điện thoại:** Trang `/checkin` tự đọc `eventId` + `token` từ link QR.
+- [x] **Viết lại API `POST /student-checkin`:** Chuẩn hóa mã, luôn xác thực TOTP, kiểm tra ví/MSSV/họ tên, sự kiện đang mở, còn chỗ; **chống claim 2 lần** theo ví hoặc MSSV (409); trả thêm thông tin sự kiện và `code` lỗi.
+- [x] **Nâng cấp API `POST /record-success`:** Kiểm tra dữ liệu, chống ghi trùng, trả về số người đã điểm danh.
+- [x] **Sửa lỗi phụ:** Nút "Đổi Mã Ngay" ở chế độ máy chiếu nay đổi mã thật; thêm ví Admin thứ 2.
+
+
 ---
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
 
-Dưới đây là danh sách 6 API đã hoàn thiện tại `http://localhost:5000/api/events`, Người 2 có thể dựa vào đây để gọi hàm:
+Dưới đây là danh sách 8 API đã hoàn thiện tại `http://localhost:5000/api/events`
 
 1. **`POST /`**: Tạo sự kiện mới. (Nhận `FormData` gồm ảnh, tên, thời gian, số lượng. Trả về thông tin sự kiện sau khi đẩy lên IPFS).
 2. **`GET /`**: Lấy danh sách toàn bộ sự kiện để đổ vào Bảng Quản trị.
@@ -144,6 +160,12 @@ Dưới đây là danh sách 6 API đã hoàn thiện tại `http://localhost:50
    - Body gửi lên: `{ "eventId": "...", "qrToken": "..." }`
    - Trả về `200` kèm `tokenURI` nếu hợp lệ. Trả về `400` nếu mã hết hạn hoặc sự kiện đã đóng.
 6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp, vô hiệu hóa mã cũ.
+7. **`POST /student-checkin` (Trâm)**: Xác thực mã + thông tin sinh viên trước khi Claim.
+   - Body: `{ "eventId" (có thể bỏ trống), "qrToken", "walletAddress", "studentId", "fullName" }`
+   - Trả về `200` kèm `eventId`, `tokenURI`, `event`. Lỗi trả `{ code, error }`: `CODE_EXPIRED`, `EVENT_CLOSED`, `EVENT_FULL` (400), `NO_OPEN_EVENT` (404), `ALREADY_CLAIMED` (409).
+8. **`POST /record-success` (Trâm)**: Ghi lịch sử điểm danh sau khi Mint thành công.
+   - Body: `{ "eventId", "walletAddress", "studentId", "fullName", "txHash" }`
+   - Trả về `201` kèm `currentAttendees`; `409` nếu đã ghi nhận trước đó.
 
 ---
 
@@ -159,3 +181,8 @@ Dưới đây là danh sách 6 API đã hoàn thiện tại `http://localhost:50
 3. **Ghép Contract vào Admin Frontend:**
    - Cập nhật địa chỉ Contract vào `EventTable.tsx` và `LiveQrStage.tsx`.
    - Cấu hình hàm của nút "Tạo Sự Kiện" ở Frontend: Sau khi Backend lưu MongoDB xong, gọi thêm hook `useWriteContract` của thư viện `wagmi` để MetaMask của Ban tổ chức bật lên ký xác nhận đăng ký sự kiện on-chain.
+
+   **C. Việc còn lại (Người 2 - Trâm):**
+- [ ] Chờ Smart Contract deploy lên Sepolia → gọi `claimBadge` trong `EventDetailsPanel.tsx`, chỉ gọi `record-success` sau khi giao dịch thành công.
+- [ ] Khung thông tin sự kiện ở `/checkin` vẫn dùng dữ liệu cứng → đổi sang dữ liệu thật từ API.
+- [ ] Demo bằng điện thoại cần link `https` (ví dụ ngrok).
