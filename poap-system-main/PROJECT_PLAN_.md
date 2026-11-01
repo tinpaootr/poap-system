@@ -144,7 +144,19 @@ club-poap-system/
 - [x] **Viết lại API `POST /student-checkin`:** Chuẩn hóa mã, luôn xác thực TOTP, kiểm tra ví/MSSV/họ tên, sự kiện đang mở, còn chỗ; **chống claim 2 lần** theo ví hoặc MSSV (409); trả thêm thông tin sự kiện và `code` lỗi.
 - [x] **Nâng cấp API `POST /record-success`:** Kiểm tra dữ liệu, chống ghi trùng, trả về số người đã điểm danh.
 - [x] **Sửa lỗi phụ:** Nút "Đổi Mã Ngay" ở chế độ máy chiếu nay đổi mã thật; thêm ví Admin thứ 2.
-
+ 
+**D. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân, nhánh `kiet`):**
+- [x] **Backend Bộ sưu tập (`backend/src/routes/collection.js`):** Viết 3 API mới tại `/api/collection`, tách riêng khỏi `events.js` nên không ảnh hưởng code của Tuyen và Trâm. Chỉ đọc dữ liệu từ model `Event`, không ghi gì vào DB.
+  - Tra cứu huy hiệu theo địa chỉ ví (không phân biệt hoa/thường), chỉ hiển thị huy hiệu đã mint thành công (có `txHash`).
+  - Hỗ trợ tìm kiếm theo tên sự kiện / đơn vị tổ chức và sắp xếp mới nhất / cũ nhất.
+  - Trả sẵn link ảnh IPFS (Pinata gateway), link giao dịch và link contract trên Sepolia Etherscan.
+  - Kiểm tra địa chỉ ví và mã sự kiện hợp lệ, không bao giờ trả `qrSecret` ra ngoài.
+- [x] **Gắn route vào server:** Thêm 2 dòng `collectionRoutes` vào `backend/src/index.js`.
+- [x] **Nối Frontend `/collection` với dữ liệu thật:**
+  - Xóa toàn bộ Mock Data (`MOCK_STATS`, `ALL_6_BADGES`).
+  - Tạo `lib/collectionApi.ts` (gọi API), `hooks/useCollection.ts` (tự tải huy hiệu theo ví MetaMask đang kết nối qua `wagmi`) và `lib/collectionMapper.ts` (chuyển dữ liệu API sang `BadgeItem` của giao diện hiện có).
+  - Họ tên, MSSV, số huy hiệu, điểm rèn luyện được tính từ dữ liệu thật. Ảnh huy hiệu lấy từ IPFS.
+  - Thêm các trạng thái: chưa kết nối ví, đang tải, báo lỗi (có nút Thử Lại), chưa có huy hiệu.
 
 ---
 
@@ -186,3 +198,11 @@ Dưới đây là danh sách 8 API đã hoàn thiện tại `http://localhost:50
 - [ ] Chờ Smart Contract deploy lên Sepolia → gọi `claimBadge` trong `EventDetailsPanel.tsx`, chỉ gọi `record-success` sau khi giao dịch thành công.
 - [ ] Khung thông tin sự kiện ở `/checkin` vẫn dùng dữ liệu cứng → đổi sang dữ liệu thật từ API.
 - [ ] Demo bằng điện thoại cần link `https` (ví dụ ngrok).
+
+**E. Việc còn lại (Người 3 - Kiệt):**
+- [ ] Chờ Smart Contract deploy → điền `CONTRACT_ADDRESS` vào `backend/.env`, hiển thị `tokenId` thật thay cho dấu "—".
+- [ ] Thêm bước đối chiếu on-chain (`ethers`: `ownerOf` / `balanceOf`) vào API verify để chống giả mạo chặt hơn.
+- [ ] Thêm `etherscanUrl`, `contractAddress` vào kiểu `BadgeItem` và nối nút "Xem trên Sepolia Etherscan" trong `CredentialModal.tsx`.
+- [ ] Làm bộ lọc học kỳ / đơn vị trong `FilterToolbar.tsx` theo dữ liệu thật thay vì danh sách cố định.
+- [ ] Hoàn thiện nút "Xuất Bảng Điểm" và "Chia Sẻ Hồ Sơ" (hiện chỉ copy link trang).
+- [ ] Điểm rèn luyện mỗi huy hiệu đang mặc định 10, cần thống nhất với nhóm có lưu điểm theo sự kiện hay không.
