@@ -1,13 +1,91 @@
 'use client';
-import React from 'react';
+import { useState } from 'react';
+import { useAccount } from 'wagmi';
+import axios from 'axios';
 
 interface EventDetailsProps {
   isScanned: boolean;
   mintState: 'idle' | 'processing' | 'success';
   onMint: () => void;
+  // Bổ sung các props để nhận dữ liệu thật từ component cha / quá trình quét QR
+  scannedEventId?: string;
+  scannedTokenOrCode?: string;
+  eventData?: any;
 }
 
-export default function EventDetailsPanel({ isScanned, mintState, onMint }: EventDetailsProps) {
+export default function EventDetailsPanel({ 
+  isScanned, 
+  mintState, 
+  onMint, 
+  scannedEventId, 
+  scannedTokenOrCode,
+  eventData 
+}: EventDetailsProps) {
+  // Lấy địa chỉ ví MetaMask thật của sinh viên bằng wagmi
+  const { address } = useAccount();
+
+  // State lưu thông tin nhập liệu của sinh viên
+  const [studentId, setStudentId] = useState('21120456');
+  const [fullName, setFullName] = useState('Nguyễn Thu Trang');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Hàm xử lý khi bấm nút "Nhận Huy Hiệu"
+const handleClaimProcess = async () => {
+    try {
+      setErrorMessage('');
+
+      if (!address) {
+        alert("Vui lòng kết nối ví MetaMask trước!");
+        return;
+      }
+
+      // Lấy trực tiếp giá trị mã từ ô input hoặc state tạm thời nếu chưa có scannedTokenOrCode
+      // (Nếu bạn nhập mã dự phòng ở ô bên trái, hãy đảm bảo state này được hứng, 
+      // hoặc đơn giản là truyền trực tiếp giá trị mã token/dự phòng vào đây)
+      const tokenOrCodeToVerify = scannedTokenOrCode || "7882"; // Hoặc giá trị mã dự phòng bạn đang nhập
+
+      if (!tokenOrCodeToVerify) {
+        alert("Vui lòng nhập hoặc quét mã check-in trước!");
+        return;
+      }
+
+      onMint(); // Bật hiệu ứng processing
+
+      // Gửi request lên Backend (chỉ cần qrToken, ví, MSSV, họ tên - backend sẽ tự dò sự kiện)
+      const response = await axios.post('http://localhost:5000/api/events/student-checkin', {
+        eventId: scannedEventId || null, // Có thể để null nếu chưa có ID, Backend tự quét theo token
+        qrToken: tokenOrCodeToVerify,
+        walletAddress: address,
+        studentId: studentId,
+        fullName: fullName
+      });
+
+      const tokenURI = response.data.tokenURI;
+      const verifiedEventId = response.data.eventId;
+      console.log("Xác thực Backend thành công, lấy được tokenURI:", tokenURI);
+
+      // TODO: Tích hợp gọi Smart Contract đúc NFT trên Sepolia ở đây
+
+      // Sau khi gọi Contract thành công, gọi API ghi nhận lịch sử
+      await axios.post('http://localhost:5000/api/events/record-success', {
+        eventId: verifiedEventId,
+        walletAddress: address,
+        studentId: studentId,
+        fullName: fullName,
+        txHash: "0x_mock_tx_hash_sepolia"
+      });
+
+      // Chuyển sang trạng thái thành công
+      // (hoặc gọi prop onMint thành công nếu có)
+
+    } catch (error: any) {
+      console.error("Lỗi khi claim:", error);
+      const errorMsg = error.response?.data?.error || "Lỗi kết nối server khi điểm danh!";
+      setErrorMessage(errorMsg);
+      alert(errorMsg);
+    }
+  };
+
   return (
     <div className="lg:col-span-5 flex flex-col gap-6">
       {!isScanned && (
@@ -25,12 +103,12 @@ export default function EventDetailsPanel({ isScanned, mintState, onMint }: Even
               <span className="material-symbols-outlined text-[14px]">event_available</span>
               Đã nhận diện thành công
             </span>
-            <span className="text-[11px] text-slate-500 font-mono">ID: #EVT-2025-04</span>
+            <span className="text-[11px] text-slate-500 font-mono">ID: {scannedEventId || '#EVT-2025-04'}</span>
           </div>
 
           <div className="flex flex-col gap-2">
             <h3 className="text-lg font-bold text-white leading-snug">
-              Hội thảo Ứng dụng Blockchain & Web3 trong Đời sống Sinh viên
+              {eventData?.name || "Hội thảo Ứng dụng Blockchain & Web3 trong Đời sống Sinh viên"}
             </h3>
             <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
               <span className="material-symbols-outlined text-[18px] text-indigo-400">record_voice_over</span>
@@ -43,7 +121,7 @@ export default function EventDetailsPanel({ isScanned, mintState, onMint }: Even
               <span className="material-symbols-outlined text-cyan-400 text-[20px]">schedule</span>
               <div className="flex flex-col">
                 <span className="text-[11px] text-slate-500">Thời gian</span>
-                <span className="text-xs text-white font-semibold">14:30 - Hôm nay</span>
+                <span className="text-xs text-white font-semibold">{eventData?.time || "14:30 - Hôm nay"}</span>
               </div>
             </div>
             <div className="p-3 rounded-lg bg-[#0b1326] border border-slate-800/50 flex items-center gap-2">
@@ -73,28 +151,44 @@ export default function EventDetailsPanel({ isScanned, mintState, onMint }: Even
               <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-[#0b1326] border border-slate-800 text-white font-mono text-xs">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  0x71C834b...4e89
+                  {address ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}` : "Chưa kết nối ví"}
                 </div>
                 <span className="text-[11px] text-emerald-400 flex items-center gap-0.5">
                   <span className="material-symbols-outlined text-[14px]">lock</span>
-                  Đã liên kết
+                  {address ? "Đã liên kết" : "Chưa kết nối"}
                 </span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] text-slate-500">Mã số sinh viên (MSSV)</label>
-                <input className="px-4 py-3 rounded-lg bg-[#0b1326] border border-slate-800 text-white text-xs focus:outline-none" readOnly type="text" value="21120456" />
+                <input 
+                  className="px-4 py-3 rounded-lg bg-[#0b1326] border border-slate-800 text-white text-xs focus:outline-none" 
+                  type="text" 
+                  value={studentId} 
+                  onChange={(e) => setStudentId(e.target.value)}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] text-slate-500">Họ và Tên</label>
-                <input className="px-4 py-3 rounded-lg bg-[#0b1326] border border-slate-800 text-white text-xs focus:outline-none" readOnly type="text" value="Nguyễn Thu Trang" />
+                <input 
+                  className="px-4 py-3 rounded-lg bg-[#0b1326] border border-slate-800 text-white text-xs focus:outline-none" 
+                  type="text" 
+                  value={fullName} 
+                  onChange={(e) => setFullName(e.target.value)}
+                />
               </div>
             </div>
           </div>
 
+          {errorMessage && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+              {errorMessage}
+            </div>
+          )}
+
           <button 
-            onClick={onMint}
+            onClick={handleClaimProcess}
             disabled={mintState !== 'idle'}
             className={`w-full mt-2 py-4 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 text-white text-sm font-bold shadow-xl transition-all flex items-center justify-center gap-2 group ${mintState !== 'idle' ? 'opacity-50 pointer-events-none' : 'hover:shadow-2xl hover:scale-[1.01]'}`}>
             <span className="material-symbols-outlined text-[24px] group-hover:rotate-12 transition-transform">auto_awesome</span>

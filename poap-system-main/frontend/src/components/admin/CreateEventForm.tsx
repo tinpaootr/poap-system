@@ -15,13 +15,12 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
   const [title, setTitle] = useState("");
   const [datetime, setDatetime] = useState("");
   const [maxAttendees, setMaxAttendees] = useState<number | "">(150);
-  const [description, setDescription] = useState("");
+  const [refreshInterval, setRefreshInterval] = useState<number>(30); // State mới
   
   const [badgePreview, setBadgePreview] = useState<string>(DEFAULT_BADGE_PREVIEW);
   const [fileName, setFileName] = useState<string>("Chưa chọn tệp (Đang dùng ảnh mẫu)");
   const [file, setFile] = useState<File | null>(null); 
 
-  // Hàm duy nhất xử lý chọn ảnh
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -42,6 +41,7 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
     formData.append("name", title.trim());
     formData.append("time", datetime.trim());
     formData.append("capacity", maxAttendees.toString());
+    formData.append("refreshInterval", refreshInterval.toString()); // Gửi lên backend
     formData.append("badgeImage", file); 
 
     try {
@@ -58,6 +58,7 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
         setTitle("");
         setDatetime("");
         setMaxAttendees(150);
+        setRefreshInterval(30);
         setBadgePreview(DEFAULT_BADGE_PREVIEW);
         setFile(null);
         setFileName("Chưa chọn tệp (Đang dùng ảnh mẫu)");
@@ -96,20 +97,20 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
-  <label className="text-sm font-medium text-slate-200">Thời gian diễn ra <span className="text-rose-400">*</span></label>
-  <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
-    <Clock className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
-    <input 
-      type="datetime-local" 
-      required 
-      value={datetime} 
-      onChange={(e) => setDatetime(e.target.value)} 
-      className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark]" 
-    />
-  </div>
-</div>
+            <label className="text-sm font-medium text-slate-200">Thời gian diễn ra <span className="text-rose-400">*</span></label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
+              <Clock className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
+              <input 
+                type="datetime-local" 
+                required 
+                value={datetime} 
+                onChange={(e) => setDatetime(e.target.value)} 
+                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark]" 
+              />
+            </div>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-slate-200">Số lượng sinh viên <span className="text-rose-400">*</span></label>
@@ -117,6 +118,22 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
               <Users className="w-4 h-4 text-slate-400 mr-2.5" />
               <input type="number" min={1} required value={maxAttendees} onChange={(e) => setMaxAttendees(e.target.value === "" ? "" : Number(e.target.value))}
               className="bg-transparent text-white text-sm w-full focus:outline-none" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-200">Đổi mã QR sau <span className="text-rose-400">*</span></label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
+              <Clock className="w-4 h-4 text-slate-400 mr-2.5" />
+              <select 
+                value={refreshInterval} 
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                className="bg-transparent text-white text-sm w-full focus:outline-none"
+              >
+                <option value={30}>30 Giây</option>
+                <option value={45}>45 Giây</option>
+                <option value={60}>60 Giây (1 Phút)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -127,14 +144,18 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
             <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-900 border border-indigo-500/30 shrink-0 relative">
               <img src={badgePreview} alt="Preview" className="w-full h-full object-cover" />
             </div>
-            <label className="flex-1 w-full cursor-pointer">
-              <div className="p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center">
-                <UploadCloud className="w-6 h-6 text-indigo-400 mb-1" />
-                <span className="text-sm font-semibold text-white">Bấm để tải ảnh huy hiệu (Bắt buộc)</span>
-                <span className="text-xs text-slate-400 mt-1">{fileName}</span>
-              </div>
-              <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-            </label>
+            <label className="flex-1 w-full cursor-pointer min-w-0">
+            <div className="w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center">
+              <UploadCloud className="w-6 h-6 text-indigo-400 mb-1 shrink-0" />
+              <span className="text-sm font-semibold text-white">Bấm để tải ảnh huy hiệu (Bắt buộc)</span>
+              
+              {/* Thêm truncate để cắt tên file dài thành "..." và max-w-full */}
+              <span className="text-xs text-slate-400 mt-1 truncate max-w-full px-2" title={fileName}>
+                {fileName}
+              </span>
+            </div>
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+          </label>
           </div>
         </div>
 

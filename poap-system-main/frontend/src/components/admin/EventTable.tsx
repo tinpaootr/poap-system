@@ -106,17 +106,21 @@ export default function EventTable({
                   {/* Cột 1: Ảnh Badge + Tên sự kiện */}
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
-                  <img
-                    src={ev.ipfsImageHash?.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")}
-                    alt={ev.name}
-                    className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
-                  />
+                      <img
+                        src={ev.ipfsImageHash?.replace(
+                          "ipfs://",
+                          "https://gateway.pinata.cloud/ipfs/"
+                        )}
+                        alt={ev.name}
+                        className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
+                      />
                       <div>
                         <p className="font-semibold text-white line-clamp-1">
                           {ev.name}
                         </p>
                         <span className="text-xs font-mono text-slate-400">
-                          ID: {ev._id} • Contract: {ev.contractAddress}
+                          ID: {ev._id} • Contract:{" "}
+                          {ev.contractAddress || "Chưa triển khai"}
                         </span>
                       </div>
                     </div>
@@ -127,14 +131,14 @@ export default function EventTable({
                     {ev.time}
                   </td>
 
-                  {/* Cột 3: Số lượng */}
+                  {/* Cột 3: Số lượng (ĐÃ FIX LỖI 3: Dùng ev.capacity và giá trị mặc định 0) */}
                   <td className="py-4 px-4 whitespace-nowrap">
                     <span className="font-semibold text-white">
-                      {ev.currentAttendees}
+                      {ev.currentAttendees ?? 0}
                     </span>
                     <span className="text-slate-400">
                       {" "}
-                      / {ev.maxAttendees} SV
+                      / {ev.capacity} SV
                     </span>
                   </td>
 

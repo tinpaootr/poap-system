@@ -12,72 +12,102 @@ import {
   X,
   ShieldCheck,
   Users,
+  Lock // Thêm icon Lock
 } from "lucide-react";
 import { ClubEvent } from "./types";
 
 interface LiveQrStageProps {
-  activeEvent: ClubEvent;
+  activeEvent: ClubEvent & { refreshInterval?: number };
   isFullscreen: boolean;
   setIsFullscreen: (val: boolean) => void;
 }
-
-const MAX_TIME = 20; // Tự động đổi mã QR mỗi 20 giây
 
 export default function LiveQrStage({
   activeEvent,
   isFullscreen,
   setIsFullscreen,
 }: LiveQrStageProps) {
-  const [timeLeft, setTimeLeft] = useState<number>(MAX_TIME);
+  const [maxTime, setMaxTime] = useState<number>(activeEvent.refreshInterval || 30);
+  const [timeLeft, setTimeLeft] = useState<number>(activeEvent.refreshInterval || 30);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [dynamicToken, setDynamicToken] = useState<string>("889201");
-  const [fallbackCode, setFallbackCode] = useState<string>("#POAP-8892");
+  const [dynamicToken, setDynamicToken] = useState<string>("Đang tải...");
+  const [fallbackCode, setFallbackCode] = useState<string>("...");
   const [copied, setCopied] = useState<boolean>(false);
   const [originUrl, setOriginUrl] = useState<string>("http://localhost:3000");
 
-  // Lấy domain hiện tại (localhost:3000 hoặc link devtunnels)
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
     }
   }, []);
 
-  // Hàm sinh mã Token mới và Mã nhập tay dự phòng mới
-  const generateNewQrToken = useCallback(() => {
-    const randomNum = Math.floor(100000 + Math.random() * 900000).toString();
-    setDynamicToken(randomNum);
-    setFallbackCode(`#POAP-${randomNum.substring(0, 4)}`);
-    setTimeLeft(MAX_TIME);
-  }, []);
+  const fetchValidQrToken = useCallback(async () => {
+    // Không gọi API lấy mã mới nếu sự kiện đã đóng
+    if (activeEvent.status !== "open") return; 
 
-  // Đổi mã ngay khi chuyển sang sự kiện khác
+    try {
+      const res = await fetch(`http://localhost:5000/api/events/${activeEvent._id}/qr-token`);
+      if (res.ok) {
+        const data = await res.json();
+        setDynamicToken(data.token);
+        setFallbackCode(`#POAP-${data.token}`);
+        setMaxTime(data.refreshInterval || 30);
+        
+        setTimeLeft(data.remainingSeconds || data.refreshInterval || 30);
+      }
+    } catch (error) {
+      console.error("Lỗi khi lấy mã QR từ Server:", error);
+    }
+  }, [activeEvent._id, activeEvent.status]);
+  
+  // Hàm ép đổi mã khẩn cấp
+  const handleForceRefresh = async () => {
+    if (activeEvent.status !== "open") return; 
+
+    try {
+      // Gọi API POST mới để reset Secret
+      const res = await fetch(`http://localhost:5000/api/events/${activeEvent._id}/force-refresh-qr`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDynamicToken(data.token);
+        setFallbackCode(`#POAP-${data.token}`);
+        setMaxTime(data.refreshInterval || 30);
+        // Đồng hồ sẽ chạy lại từ số giây thực tế của mã mới
+        setTimeLeft(data.remainingSeconds || data.refreshInterval || 30); 
+      }
+    } catch (error) {
+      console.error("Lỗi khi ép đổi mã khẩn cấp:", error);
+    }
+  };
+  
   useEffect(() => {
-    generateNewQrToken();
-  }, [activeEvent._id, generateNewQrToken]);
+    fetchValidQrToken();
+  }, [activeEvent._id, activeEvent.status, fetchValidQrToken]);
 
-  // Đồng hồ đếm ngược
   useEffect(() => {
     if (isPaused || activeEvent.status !== "open") return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          generateNewQrToken();
-          return MAX_TIME;
+          fetchValidQrToken();
+          return maxTime;
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isPaused, activeEvent.status, generateNewQrToken]);
+  }, [isPaused, activeEvent.status, fetchValidQrToken, maxTime]);
 
-  // Chuỗi URL thực tế nằm trong mã QR để Người 2 (Check-in) quét
   const qrValue = `${originUrl}/checkin?eventId=${encodeURIComponent(
-    activeEvent.id
+    activeEvent._id
   )}&token=${dynamicToken}&code=${encodeURIComponent(fallbackCode)}`;
 
-  const progressPercent = (timeLeft / MAX_TIME) * 100;
+
+  const progressPercent = (timeLeft / maxTime) * 100;
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(fallbackCode);
@@ -85,15 +115,16 @@ export default function LiveQrStage({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // UI báo trạng thái sự kiện
+  const isEventOpen = activeEvent.status === "open";
+
   return (
     <>
-      {/* KHUNG TRÌNH CHIẾU BÊN PHẢI */}
       <div className="bg-[#131b2e] border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col justify-between h-full">
-        {/* Thanh trạng thái trên cùng */}
         <div>
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+              <span className={`w-2.5 h-2.5 rounded-full ${isEventOpen ? "bg-rose-500 animate-ping" : "bg-slate-500"}`} />
               <span className="font-bold text-white text-base">
                 Trình Chiếu Mã QR Động
               </span>
@@ -101,82 +132,110 @@ export default function LiveQrStage({
 
             <button
               onClick={() => setIsFullscreen(true)}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30 transition"
+              disabled={!isEventOpen}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition ${
+                isEventOpen 
+                ? "bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30" 
+                : "bg-slate-800/50 text-slate-500 border border-slate-800 cursor-not-allowed"
+              }`}
             >
               <Maximize2 className="w-3.5 h-3.5" />
               <span>Phóng to Máy chiếu</span>
             </button>
           </div>
 
-          {/* Tên sự kiện đang chiếu */}
           <div className="mt-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono text-indigo-400">
                 Mã SK: {activeEvent._id}
               </span>
-              <span className="text-xs text-emerald-400 flex items-center gap-1">
-                ● Đang mở điểm danh
-              </span>
+              
+              {/* Sửa lại nhãn trạng thái góc phải */}
+              {isEventOpen ? (
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  ● Đang mở điểm danh
+                </span>
+              ) : (
+                <span className="text-xs text-rose-400 flex items-center gap-1">
+                  ● Đã khóa điểm danh
+                </span>
+              )}
             </div>
             <h3 className="text-base font-bold text-white mt-1 line-clamp-1">
               {activeEvent.name}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Mã QR tự động đổi mỗi {MAX_TIME}s chống chụp màn hình gửi ra ngoài.
+              Mã QR tự động đổi mỗi {maxTime}s 
             </p>
           </div>
         </div>
 
-        {/* Khung chứa Mã QR Động */}
-        <div className="my-4 p-6 rounded-2xl bg-[#070c18] border border-slate-800/80 flex flex-col items-center justify-center">
-          <div className="p-4 bg-white rounded-2xl shadow-2xl relative">
-            <QRCodeSVG
-              value={qrValue}
-              size={210}
-              level="H"
-              includeMargin={false}
-              fgColor="#0b1326"
-            />
-            {isPaused && (
-              <div className="absolute inset-0 bg-slate-950/85 rounded-2xl flex flex-col items-center justify-center text-white p-4 text-center">
-                <PauseCircle className="w-10 h-10 text-amber-400 mb-2" />
-                <span className="text-sm font-bold">Đã tạm dừng cấp mã</span>
+        {/* Khu vực hiển thị mã QR HOẶC thông báo khóa */}
+        <div className="my-4 p-6 rounded-2xl bg-[#070c18] border border-slate-800/80 flex flex-col items-center justify-center min-h-[300px]">
+          {isEventOpen ? (
+            <>
+              <div className="p-4 bg-white rounded-2xl shadow-2xl relative">
+                <QRCodeSVG
+                  value={qrValue}
+                  size={210}
+                  level="H"
+                  includeMargin={false}
+                  fgColor="#0b1326"
+                />
+                {isPaused && (
+                  <div className="absolute inset-0 bg-slate-950/85 rounded-2xl flex flex-col items-center justify-center text-white p-4 text-center">
+                    <PauseCircle className="w-10 h-10 text-amber-400 mb-2" />
+                    <span className="text-sm font-bold">Đã tạm dừng cấp mã</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Thanh đếm ngược thời gian */}
-          <div className="w-full max-w-xs mt-4 flex flex-col gap-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Tự động đổi mã sau:</span>
-              <span className="text-cyan-400 font-bold text-sm">
-                {isPaused ? "Tạm dừng" : `${timeLeft} giây`}
-              </span>
+              <div className="w-full max-w-xs mt-4 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Tự động đổi mã sau:</span>
+                  <span className="text-cyan-400 font-bold text-sm">
+                    {isPaused ? "Tạm dừng" : `${timeLeft} giây`}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-cyan-400 to-emerald-400 h-full rounded-full transition-all duration-1000"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            // HIỂN THỊ KHI SỰ KIỆN ĐÓNG
+            <div className="flex flex-col items-center text-center p-4">
+              <div className="w-16 h-16 bg-slate-800/80 rounded-full flex items-center justify-center mb-4">
+                <Lock className="w-8 h-8 text-slate-400" />
+              </div>
+              <h4 className="text-slate-300 font-semibold mb-1">Mã QR Đã Bị Khóa</h4>
+              <p className="text-sm text-slate-500">
+                Sự kiện này đã kết thúc hoặc chưa mở điểm danh.<br/>
+                Vui lòng thao tác ở bảng bên dưới để mở lại.
+              </p>
             </div>
-            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-cyan-400 to-emerald-400 h-full rounded-full transition-all duration-1000"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Mã dự phòng nhập tay + Nút điều khiển */}
+        {/* Khu vực nút bấm dự phòng (Chỉ hiển thị khi đang mở) */}
         <div className="flex flex-col gap-3">
-          <div className="p-3.5 rounded-xl bg-[#0b1326] border border-slate-800 flex items-center justify-between">
+          <div className={`p-3.5 rounded-xl border flex items-center justify-between ${isEventOpen ? 'bg-[#0b1326] border-slate-800' : 'bg-slate-900/50 border-slate-800/50 opacity-50'}`}>
             <div>
               <span className="text-[11px] text-slate-400 block">
                 MÃ DỰ PHÒNG (NHẬP TAY):
               </span>
-              <span className="text-lg font-mono font-bold text-indigo-400 tracking-wider">
-                {fallbackCode}
+              <span className={`text-lg font-mono font-bold tracking-wider ${isEventOpen ? 'text-indigo-400' : 'text-slate-500'}`}>
+                {isEventOpen ? fallbackCode : "ĐÃ KHÓA"}
               </span>
             </div>
             <button
               type="button"
               onClick={handleCopyCode}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition"
+              disabled={!isEventOpen}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${isEventOpen ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'}`}
             >
               {copied ? (
                 <>
@@ -196,7 +255,8 @@ export default function LiveQrStage({
             <button
               type="button"
               onClick={() => setIsPaused(!isPaused)}
-              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-white text-xs font-semibold transition"
+              disabled={!isEventOpen}
+              className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${isEventOpen ? 'bg-slate-800/90 hover:bg-slate-700 text-white' : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'}`}
             >
               {isPaused ? (
                 <>
@@ -213,8 +273,9 @@ export default function LiveQrStage({
 
             <button
               type="button"
-              onClick={generateNewQrToken}
-              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-400 text-xs font-semibold transition"
+              onClick={handleForceRefresh}
+              disabled={!isEventOpen}
+              className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${isEventOpen ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-400' : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'}`}
             >
               <RefreshCw className="w-4 h-4" />
               <span>Đổi Mã Ngay</span>
@@ -223,10 +284,8 @@ export default function LiveQrStage({
         </div>
       </div>
 
-      {/* MODAL PHÓNG TO TOÀN MÀN HÌNH (DÀNH CHO MÁY CHIẾU HỘI TRƯỜNG) */}
-      {isFullscreen && (
+      {isFullscreen && isEventOpen && (
         <div className="fixed inset-0 z-50 bg-[#070c18]/98 backdrop-blur-2xl flex flex-col justify-between p-6 md:p-10">
-          {/* Top Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold">
@@ -240,7 +299,7 @@ export default function LiveQrStage({
 
             <div className="flex items-center gap-3">
               <button
-                onClick={generateNewQrToken}
+               onClick={handleForceRefresh}
                 className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl text-sm font-semibold transition"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -256,7 +315,6 @@ export default function LiveQrStage({
             </div>
           </div>
 
-          {/* Center Mega QR */}
           <div className="flex flex-col items-center justify-center my-auto py-4">
             <div className="p-8 bg-white rounded-3xl shadow-2xl flex flex-col items-center">
               <QRCodeSVG
@@ -272,7 +330,6 @@ export default function LiveQrStage({
               </div>
             </div>
 
-            {/* Countdown & Fallback Code */}
             <div className="w-full max-w-md mt-6 flex flex-col items-center gap-3">
               <div className="flex items-center justify-between w-full text-base">
                 <span className="text-slate-300">Mã QR tự động làm mới sau:</span>
@@ -296,18 +353,17 @@ export default function LiveQrStage({
             </div>
           </div>
 
-          {/* Bottom Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 bg-[#131b2e] border border-slate-800 p-4 rounded-2xl">
             <div className="flex items-center gap-3">
               <Users className="w-5 h-5 text-emerald-400" />
               <span className="font-bold text-white">
-                Đã điểm danh: {activeEvent.currentAttendees} /{" "}
-                {activeEvent.maxAttendees} sinh viên
+                Đã điểm danh: {activeEvent.currentAttendees ?? 0} /{" "}
+                {activeEvent.capacity} sinh viên
               </span>
             </div>
             <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Smart Contract: {activeEvent.contractAddress} (Sepolia)
+              Smart Contract: {activeEvent.contractAddress || "Chưa triển khai"} (Sepolia)
             </div>
           </div>
         </div>

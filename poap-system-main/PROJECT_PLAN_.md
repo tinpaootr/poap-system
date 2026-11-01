@@ -114,14 +114,48 @@ club-poap-system/
   - Bảng Quản trị hiển thị Real-time từ Database, các trạng thái Đóng/Mở hoạt động mượt mà.
   - Xử lý hoàn tất lỗi bộ Date-time picker thân thiện và lỗi nhập số 0.
   - Xử lý triệt để các cảnh báo lỗi liên kết thư viện `wagmi` / MetaMask.
-- **[🎉] BÀN GIAO:** Tuyen đã hoàn thiện 100% công việc của phân hệ Ban Tổ Chức (Admin). Giao diện và API đã sẵn sàng để đón luồng của Sinh Viên.
 
-**B. Đã hoàn thành (Người 2 - Sinh viên Điểm danh / Check-in):**
-- [x] **Xây dựng tuyến đường & Giao diện Check-in (`/checkin`):** Đã hoàn thiện trang quét mã QR và xác nhận điểm danh cho sinh viên (`src/app/checkin/page.tsx`).
-- [x] **Phát triển các Component Check-in riêng biệt:** Tổ chức thư mục `src/components/checkin/` với các component xử lý luồng quét mã, hiển thị trạng thái sự kiện và tương tác nhận huy hiệu.
-- [x] **Tích hợp logic xử lý mã QR động & Trạng thái Claim:** Xây dựng luồng nhận diện mã QR (quét hoặc nhập mã code thủ công), tích hợp hiệu ứng trạng thái chờ xử lý (processing) và nhận thành công (success) khi sinh viên bấm nhận NFT huy hiệu.
+====================
+== Ngày 31/10/2026 (Cập nhật mới): ==
+====================
 
-**B. Nhiệm vụ tiếp theo (Bàn giao cho Người 2 - Sinh viên Checkin):**
-1. **Tiếp nhận QR Code:** Sử dụng điện thoại quét mã QR động được chiếu trên màn hình của Tuyen để lấy đường link dẫn vào trang `/checkin`.
-2. **Xử lý Param URL:** Trong trang `/checkin` (Frontend), sử dụng `useSearchParams` của Next.js để bóc tách `eventId`, `token` (mã động) từ link.
-3. **Giao tiếp Backend:** Gọi API `POST /api/events/verify-qr` mà Tuyen đã viết sẵn để xác thực xem mã QR vừa quét còn hiệu lực hay đã hết hạn. Thiết kế thông báo lỗi (hết hạn) hoặc hiển thị thông tin sự kiện (thành công) cho Sinh Viên.
+**A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
+- [x] **Hoàn thiện IPFS & Metadata chuẩn ERC-721:** Hệ thống nay đã đẩy cả ảnh (`ipfsImageHash`) và file JSON chứa thuộc tính sự kiện (`ipfsMetadataHash` / `tokenURI`) lên Pinata để sẵn sàng đúc NFT.
+- [x] **Fix logic UI/UX màn hình Admin:**
+  - Ẩn/khóa hoàn toàn mã QR khi sự kiện chuyển trạng thái "Đã kết thúc", thêm biểu tượng ổ khóa.
+  - Đồng bộ thành công hiển thị số lượng sinh viên (`capacity`) và ID thật (`_id`) lên URL QR Code.
+  - Sửa lỗi tràn chữ khi upload file ảnh có tên quá dài.
+- [x] **Xử lý thuật toán TOTP (Chống gian lận thời gian):**
+  - Nâng cấp API trả về "số giây thực tế còn lại" của mã QR để Frontend đếm ngược chính xác tuyệt đối, tránh lỗi "Lệch nhịp".
+  - Bổ sung Nút **"Đổi Mã Ngay" (Panic Button)**: Gọi API mới ép đổi toàn bộ `qrSecret` để giết mã cũ ngay lập tức nếu bị chụp lén.
+- [x] **Clean code & Tối ưu:** Dọn dẹp sạch sẽ các cảnh báo rác của Mongoose (vụ `deprecated new: true`) và Webpack (vụ thư viện `ox`).
+
+---
+
+## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
+
+Dưới đây là danh sách 6 API đã hoàn thiện tại `http://localhost:5000/api/events`, Người 2 có thể dựa vào đây để gọi hàm:
+
+1. **`POST /`**: Tạo sự kiện mới. (Nhận `FormData` gồm ảnh, tên, thời gian, số lượng. Trả về thông tin sự kiện sau khi đẩy lên IPFS).
+2. **`GET /`**: Lấy danh sách toàn bộ sự kiện để đổ vào Bảng Quản trị.
+3. **`GET /:id/qr-token`**: Lấy mã TOTP hiện tại để chiếu lên màn hình. Trả về `token`, `refreshInterval`, và `remainingSeconds` (số giây còn lại của mã).
+4. **`PATCH /:id/status`**: Đóng/Mở trạng thái sự kiện (`upcoming`, `open`, `closed`).
+5. **`POST /verify-qr` (Người 2 cần dùng)**: Kiểm tra mã QR sinh viên vừa quét.
+   - Body gửi lên: `{ "eventId": "...", "qrToken": "..." }`
+   - Trả về `200` kèm `tokenURI` nếu hợp lệ. Trả về `400` nếu mã hết hạn hoặc sự kiện đã đóng.
+6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp, vô hiệu hóa mã cũ.
+
+---
+
+## 6. NHIỆM VỤ TIẾP THEO (GIAI ĐOẠN 3: BLOCKCHAIN)
+
+**Dành cho Người 1 (Tuyen) - Bắt đầu vào thư mục `/blockchain`:**
+
+1. **Viết Smart Contract (`ClubPOAP.sol`):**
+   - Viết mã nguồn Solidity theo chuẩn **ERC-5192 (Soulbound NFT)**. Nó kế thừa ERC-721 nhưng phải override hàm `transferFrom` (thêm revert) để đảm bảo NFT đúc ra dính chết vào ví sinh viên, không thể gửi cho người khác.
+   - Viết hàm `createEvent(string memory _eventId, uint256 _capacity)` dành riêng cho Admin (sử dụng modifier `onlyOwner` hoặc AccessControl).
+   - Viết hàm `claimBadge(string memory _eventId, string memory _tokenURI)` cho sinh viên gọi (kèm logic kiểm tra ví đó đã claim chưa, số lượng đã vượt quá `capacity` chưa).
+2. **Deploy lên mạng Sepolia:** Cấu hình Hardhat hoặc Foundry để deploy Smart Contract lên mạng thử nghiệm Sepolia. Lấy địa chỉ Contract.
+3. **Ghép Contract vào Admin Frontend:**
+   - Cập nhật địa chỉ Contract vào `EventTable.tsx` và `LiveQrStage.tsx`.
+   - Cấu hình hàm của nút "Tạo Sự Kiện" ở Frontend: Sau khi Backend lưu MongoDB xong, gọi thêm hook `useWriteContract` của thư viện `wagmi` để MetaMask của Ban tổ chức bật lên ký xác nhận đăng ký sự kiện on-chain.

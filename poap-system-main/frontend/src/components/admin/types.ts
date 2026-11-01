@@ -2,16 +2,18 @@
 export type EventStatus = "upcoming" | "open" | "closed";
 
 export interface ClubEvent {
-  _id: string;             // MongoDB tự tạo _id
-  name: string;            // Đổi title thành name cho khớp Backend
-  time: string;            // Đổi datetime thành time
-  capacity: number;        // Đổi maxAttendees thành capacity
+  _id: string;                 // MongoDB tự tạo _id
+  name: string;                // Tên sự kiện
+  time: string;                // Thời gian diễn ra
+  capacity: number;            // Số lượng sinh viên tối đa
   status: EventStatus;
-  ipfsImageHash: string;   // Lưu link ipfs://...
-  qrSecret: string;        // Khóa bí mật tạo QR động
+  ipfsImageHash: string;       // Link ảnh gốc ipfs://...
+  ipfsMetadataHash?: string;   // Link JSON Metadata chuẩn ERC-721 (tokenURI)
+  qrSecret: string;            // Khóa bí mật tạo QR động
+  refreshInterval?: number;    // Chu kỳ làm mới mã QR (giây)
   createdAt?: string;
-  
-  // Các trường sẽ dùng khi ghép Smart Contract (tạm giữ)
-  currentAttendees?: number; 
+
+  // Các trường đồng bộ với Smart Contract & Backend
+  currentAttendees?: number;
   contractAddress?: string;
 }
