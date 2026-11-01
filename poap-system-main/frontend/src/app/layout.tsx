@@ -17,22 +17,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className="dark">
+    <html lang="vi">
       <head>
-        {/* Font Material Symbols để render toàn bộ icon */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
-        />
-        {/* Font Plus Jakarta Sans cho tiêu đề */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&display=swap"
-          rel="stylesheet"
+        <link 
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" 
+          rel="stylesheet" 
         />
       </head>
-      <body className={`${inter.className} bg-[#0b1326] text-[#dae2fd] antialiased min-h-screen`}>
+      <body className={inter.className}>
         <Providers>
           <Navbar />
           {children}

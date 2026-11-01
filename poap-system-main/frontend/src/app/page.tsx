@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Calendar, QrCode, Award } from 'lucide-react';
+import { ConnectWalletButton } from '@/components/ConnectWalletButton';
 
 export default function Home() {
   return (
@@ -40,32 +41,16 @@ export default function Home() {
             </p>
           </Link>
 
-          {/* 2. Sinh Viên Điểm Danh */}
-          <Link
-            href="/checkin"
-            className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-purple-500 transition duration-200 block group"
-          >
-            <QrCode className="h-8 w-8 text-purple-400 mb-4 group-hover:scale-110 transition-transform" />
-            <h3 className="font-bold text-xl mb-2 text-slate-100 group-hover:text-purple-400 transition-colors">
-              Sinh Viên Điểm Danh
-            </h3>
-            <p className="text-slate-400 text-sm">
-              Quét mã QR tại hội thảo, kết nối MetaMask để nhận huy hiệu NFT.
-            </p>
+          <Link href="/checkin" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
+            <QrCode className="h-8 w-8 text-purple-400 mb-4" />
+            <h3 className="font-bold text-xl mb-2">Sinh Viên Điểm Danh</h3>
+            <p className="text-slate-400 text-sm">Quét mã QR tại hội thảo, kết nối MetaMask để nhận huy hiệu NFT.</p>
           </Link>
 
-          {/* 3. Bộ Sưu Tập Cá Nhân */}
-          <Link
-            href="/collection"
-            className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-pink-500 transition duration-200 block group"
-          >
-            <Award className="h-8 w-8 text-pink-400 mb-4 group-hover:scale-110 transition-transform" />
-            <h3 className="font-bold text-xl mb-2 text-slate-100 group-hover:text-pink-400 transition-colors">
-              Bộ Sưu Tập Cá Nhân
-            </h3>
-            <p className="text-slate-400 text-sm">
-              Xem lại toàn bộ các huy hiệu chứng nhận ngoại khóa đã tích lũy.
-            </p>
+          <Link href="/collection" className="p-6 bg-slate-900 border border-slate-800 rounded-xl hover:border-indigo-500 transition">
+            <Award className="h-8 w-8 text-pink-400 mb-4" />
+            <h3 className="font-bold text-xl mb-2">Bộ Sưu Tập Cá Nhân</h3>
+            <p className="text-slate-400 text-sm">Xem lại toàn bộ các huy hiệu chứng nhận ngoại khóa đã tích lũy.</p>
           </Link>
         </div>
       </section>

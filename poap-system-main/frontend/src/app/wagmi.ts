@@ -5,7 +5,12 @@ import { metaMask, injected } from 'wagmi/connectors';
 export const config = createConfig({
   chains: [polygonAmoy, sepolia],
   connectors: [
-    metaMask(),
+    metaMask({
+      dappMetadata: {
+        name: "Club POAP System",
+        url: "http://localhost:3000",
+      },
+    }),
     injected(),
   ],
   transports: {

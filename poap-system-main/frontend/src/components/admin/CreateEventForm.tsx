@@ -14,54 +14,66 @@ const DEFAULT_BADGE_PREVIEW =
 export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps) {
   const [title, setTitle] = useState("");
   const [datetime, setDatetime] = useState("");
-  const [maxAttendees, setMaxAttendees] = useState<number>(150);
-  const [description, setDescription] = useState("");
+  const [maxAttendees, setMaxAttendees] = useState<number | "">(150);
+  const [refreshInterval, setRefreshInterval] = useState<number>(30); // State mới
+  
   const [badgePreview, setBadgePreview] = useState<string>(DEFAULT_BADGE_PREVIEW);
   const [fileName, setFileName] = useState<string>("Chưa chọn tệp (Đang dùng ảnh mẫu)");
+  const [file, setFile] = useState<File | null>(null); 
 
-  // Xử lý chọn file ảnh từ máy tính và tạo URL preview
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      setBadgePreview(previewUrl);
-      setFileName(file.name);
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile); 
+      setBadgePreview(URL.createObjectURL(selectedFile));
+      setFileName(selectedFile.name);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !datetime.trim()) return;
+    if (!title.trim() || !datetime.trim() || !file) {
+      alert("Vui lòng nhập đủ thông tin và chọn ảnh huy hiệu!");
+      return;
+    }
 
-    const newEvent: ClubEvent = {
-      id: `EVT-0${Math.floor(100 + Math.random() * 900)}`,
-      title: title.trim(),
-      datetime: datetime.trim(),
-      maxAttendees: Number(maxAttendees) || 100,
-      currentAttendees: 0,
-      description:
-        description.trim() ||
-        "Sinh viên tham dự và quét mã QR tại hội trường sẽ nhận 01 Soulbound Badge trên Sepolia.",
-      badgeImage: badgePreview,
-      status: "live", // Tạo xong kích hoạt mở điểm danh luôn
-      contractAddress: `0x${Math.random().toString(16).substring(2, 6).toUpperCase()}...${Math.random()
-        .toString(16)
-        .substring(2, 6)
-        .toUpperCase()}`,
-    };
+    const formData = new FormData();
+    formData.append("name", title.trim());
+    formData.append("time", datetime.trim());
+    formData.append("capacity", maxAttendees.toString());
+    formData.append("refreshInterval", refreshInterval.toString()); // Gửi lên backend
+    formData.append("badgeImage", file); 
 
-    onCreateEvent(newEvent);
+    try {
+      alert("Đang tải ảnh lên IPFS và tạo sự kiện...");
+      const res = await fetch("http://localhost:5000/api/events", {
+        method: "POST",
+        body: formData,
+      });
 
-    // Reset form
-    setTitle("");
-    setDatetime("");
-    setMaxAttendees(150);
-    setDescription("");
+      if (res.ok) {
+        const data = await res.json();
+        onCreateEvent(data.event); 
+        
+        setTitle("");
+        setDatetime("");
+        setMaxAttendees(150);
+        setRefreshInterval(30);
+        setBadgePreview(DEFAULT_BADGE_PREVIEW);
+        setFile(null);
+        setFileName("Chưa chọn tệp (Đang dùng ảnh mẫu)");
+        alert("Tạo sự kiện thành công!");
+      } else {
+        const err = await res.json();
+        alert("Lỗi: " + err.error);
+      }
+    } catch (error) {
+      console.error("Lỗi:", error);
+    }
   };
 
   return (
     <div className="bg-[#131b2e] border border-slate-800/80 rounded-2xl p-6 md:p-8 shadow-xl flex flex-col gap-6">
-      {/* Header Form */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
@@ -69,135 +81,86 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
           </div>
           <div>
             <h2 className="text-lg font-bold text-white">Khởi Tạo Sự Kiện Mới</h2>
-            <p className="text-xs text-slate-400">
-              Đăng ký thông tin hội thảo và cấu hình huy hiệu Soulbound NFT
-            </p>
+            <p className="text-xs text-slate-400">Đăng ký thông tin hội thảo và cấu hình huy hiệu</p>
           </div>
         </div>
-        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-          ERC-5192 Soulbound
-        </span>
+        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">ERC-5192 Soulbound</span>
       </div>
 
-      {/* Form Fields */}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {/* Tên sự kiện */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-200 flex items-center justify-between">
-            <span>
-              Tên hội thảo / Sự kiện <span className="text-rose-400">*</span>
-            </span>
-            <span className="text-xs text-slate-500">Tối đa 120 ký tự</span>
-          </label>
+          <label className="text-sm font-medium text-slate-200">Tên hội thảo / Sự kiện <span className="text-rose-400">*</span></label>
           <input
-            type="text"
-            required
-            maxLength={120}
-            value={title}
+            type="text" required maxLength={120} value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ví dụ: Hội thảo Ứng dụng Blockchain & Web3 2026"
-            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white placeholder:text-slate-500 text-sm rounded-xl px-4 py-3 focus:outline-none transition"
+            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white text-sm rounded-xl px-4 py-3 focus:outline-none"
           />
         </div>
 
-        {/* Thời gian & Số lượng */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-200">
-              Thời gian diễn ra <span className="text-rose-400">*</span>
-            </label>
-            <div className="flex items-center bg-[#0b1326] border border-slate-800 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
+            <label className="text-sm font-medium text-slate-200">Thời gian diễn ra <span className="text-rose-400">*</span></label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
               <Clock className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
-              <input
-                type="text"
-                required
-                value={datetime}
-                onChange={(e) => setDatetime(e.target.value)}
-                placeholder="14:00 - 17:00, 30/10/2026"
-                className="bg-transparent text-white placeholder:text-slate-500 text-sm w-full focus:outline-none"
+              <input 
+                type="datetime-local" 
+                required 
+                value={datetime} 
+                onChange={(e) => setDatetime(e.target.value)} 
+                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark]" 
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-200">
-              Số lượng tham gia tối đa <span className="text-rose-400">*</span>
-            </label>
-            <div className="flex items-center bg-[#0b1326] border border-slate-800 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
-              <Users className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
-              <input
-                type="number"
-                min={1}
-                max={5000}
-                required
-                value={maxAttendees}
-                onChange={(e) => setMaxAttendees(Number(e.target.value))}
+            <label className="text-sm font-medium text-slate-200">Số lượng sinh viên <span className="text-rose-400">*</span></label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
+              <Users className="w-4 h-4 text-slate-400 mr-2.5" />
+              <input type="number" min={1} required value={maxAttendees} onChange={(e) => setMaxAttendees(e.target.value === "" ? "" : Number(e.target.value))}
+              className="bg-transparent text-white text-sm w-full focus:outline-none" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-200">Đổi mã QR sau <span className="text-rose-400">*</span></label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
+              <Clock className="w-4 h-4 text-slate-400 mr-2.5" />
+              <select 
+                value={refreshInterval} 
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
                 className="bg-transparent text-white text-sm w-full focus:outline-none"
-              />
-              <span className="text-xs text-slate-400 ml-2 shrink-0">Sinh viên</span>
+              >
+                <option value={30}>30 Giây</option>
+                <option value={45}>45 Giây</option>
+                <option value={60}>60 Giây (1 Phút)</option>
+              </select>
             </div>
           </div>
         </div>
 
-        {/* Mô tả */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-200">Mô tả sự kiện</label>
-          <textarea
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Nhập mô tả quyền lợi, điều kiện nhận chứng nhận NFT ngoại khóa..."
-            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white placeholder:text-slate-500 text-sm rounded-xl p-3.5 focus:outline-none transition resize-none"
-          />
-        </div>
-
-        {/* Upload Hình ảnh Huy hiệu + Preview */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-200 flex items-center justify-between">
-            <span>Hình ảnh Huy hiệu Soulbound (Badge Preview)</span>
-            <span className="text-xs text-slate-400">PNG / JPG / SVG</span>
-          </label>
-
+          <label className="text-sm font-medium text-slate-200">Hình ảnh Huy hiệu</label>
           <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-[#0b1326] border border-slate-800 rounded-xl">
-            {/* Khung Preview Ảnh */}
-            <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-900 border border-indigo-500/30 shrink-0 shadow-md relative group">
-              <img
-                src={badgePreview}
-                alt="Badge Preview"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-0 inset-x-0 bg-black/60 text-[10px] text-center text-indigo-300 py-0.5">
-                Preview
-              </div>
+            <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-900 border border-indigo-500/30 shrink-0 relative">
+              <img src={badgePreview} alt="Preview" className="w-full h-full object-cover" />
             </div>
-
-            {/* Khung chọn file */}
-            <label className="flex-1 w-full cursor-pointer">
-              <div className="p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center text-center">
-                <UploadCloud className="w-6 h-6 text-indigo-400 mb-1" />
-                <span className="text-sm font-semibold text-white">
-                  Bấm để tải ảnh huy hiệu từ máy tính
-                </span>
-                <span className="text-xs text-slate-400 mt-0.5 truncate max-w-[260px]">
-                  {fileName}
-                </span>
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-            </label>
+            <label className="flex-1 w-full cursor-pointer min-w-0">
+            <div className="w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center">
+              <UploadCloud className="w-6 h-6 text-indigo-400 mb-1 shrink-0" />
+              <span className="text-sm font-semibold text-white">Bấm để tải ảnh huy hiệu (Bắt buộc)</span>
+              
+              {/* Thêm truncate để cắt tên file dài thành "..." và max-w-full */}
+              <span className="text-xs text-slate-400 mt-1 truncate max-w-full px-2" title={fileName}>
+                {fileName}
+              </span>
+            </div>
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+          </label>
           </div>
         </div>
 
-        {/* Nút Submit */}
         <div className="flex justify-end pt-2">
-          <button
-            type="submit"
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 active:scale-95 transition"
-          >
+          <button type="submit" className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition">
             <CheckCircle2 className="w-4 h-4" />
             <span>Tạo Sự Kiện & Kích Hoạt QR</span>
           </button>
