@@ -29,60 +29,76 @@ export default function EventDetailsPanel({
   const [fullName, setFullName] = useState('Nguyễn Thu Trang');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Hàm xử lý khi bấm nút "Nhận Huy Hiệu"
-const handleClaimProcess = async () => {
+   // Hàm xử lý khi bấm nút "Nhận Huy Hiệu"
+  const handleClaimProcess = async () => {
+    setErrorMessage('');
+
+    if (!address) {
+      alert("Vui lòng kết nối ví MetaMask trước!");
+      return;
+    }
+
+    if (!studentId.trim() || !fullName.trim()) {
+      setErrorMessage("Vui lòng nhập đầy đủ MSSV và Họ tên!");
+      return;
+    }
+
+    const tokenOrCodeToVerify = scannedTokenOrCode || "7882"; // Hoặc giá trị mã dự phòng bạn đang nhập
+
+    if (!tokenOrCodeToVerify) {
+      alert("Vui lòng nhập hoặc quét mã check-in trước!");
+      return;
+    }
+
     try {
-      setErrorMessage('');
-
-      if (!address) {
-        alert("Vui lòng kết nối ví MetaMask trước!");
-        return;
-      }
-
-      // Lấy trực tiếp giá trị mã từ ô input hoặc state tạm thời nếu chưa có scannedTokenOrCode
-      // (Nếu bạn nhập mã dự phòng ở ô bên trái, hãy đảm bảo state này được hứng, 
-      // hoặc đơn giản là truyền trực tiếp giá trị mã token/dự phòng vào đây)
-      const tokenOrCodeToVerify = scannedTokenOrCode || "7882"; // Hoặc giá trị mã dự phòng bạn đang nhập
-
-      if (!tokenOrCodeToVerify) {
-        alert("Vui lòng nhập hoặc quét mã check-in trước!");
-        return;
-      }
-
-      onMint(); // Bật hiệu ứng processing
-
-      // Gửi request lên Backend (chỉ cần qrToken, ví, MSSV, họ tên - backend sẽ tự dò sự kiện)
+      // 1. Xác thực với Backend TRƯỚC, chưa bật hiệu ứng processing
       const response = await axios.post('http://localhost:5000/api/events/student-checkin', {
-        eventId: scannedEventId || null, // Có thể để null nếu chưa có ID, Backend tự quét theo token
+        eventId: scannedEventId || null,
         qrToken: tokenOrCodeToVerify,
         walletAddress: address,
-        studentId: studentId,
-        fullName: fullName
+        studentId: studentId.trim(),
+        fullName: fullName.trim()
       });
 
       const tokenURI = response.data.tokenURI;
       const verifiedEventId = response.data.eventId;
       console.log("Xác thực Backend thành công, lấy được tokenURI:", tokenURI);
 
+      // 2. Backend OK rồi mới bật hiệu ứng processing
+      onMint();
+
       // TODO: Tích hợp gọi Smart Contract đúc NFT trên Sepolia ở đây
 
-      // Sau khi gọi Contract thành công, gọi API ghi nhận lịch sử
+      // 3. Ghi nhận lịch sử
       await axios.post('http://localhost:5000/api/events/record-success', {
         eventId: verifiedEventId,
         walletAddress: address,
-        studentId: studentId,
-        fullName: fullName,
+        studentId: studentId.trim(),
+        fullName: fullName.trim(),
         txHash: "0x_mock_tx_hash_sepolia"
       });
 
-      // Chuyển sang trạng thái thành công
-      // (hoặc gọi prop onMint thành công nếu có)
-
     } catch (error: any) {
-      console.error("Lỗi khi claim:", error);
-      const errorMsg = error.response?.data?.error || "Lỗi kết nối server khi điểm danh!";
+      let errorMsg = "Lỗi kết nối server khi điểm danh!";
+
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const serverMsg = error.response.data?.error || error.response.data?.message;
+
+        if (status === 409) {
+          errorMsg = serverMsg || "Ví hoặc MSSV này đã điểm danh sự kiện này rồi!";
+        } else if (status === 400 || status === 404) {
+          errorMsg = serverMsg || "Mã check-in không hợp lệ hoặc sự kiện không tồn tại!";
+        } else {
+          errorMsg = serverMsg || `Lỗi server (${status}), vui lòng thử lại!`;
+        }
+      } else if (axios.isAxiosError(error) && error.request) {
+        errorMsg = "Không kết nối được server (localhost:5000). Backend đã chạy chưa?";
+      }
+
+      // Dùng warn thay vì error để Next.js không bật màn hình lỗi đỏ
+      console.warn("Lỗi khi claim:", error);
       setErrorMessage(errorMsg);
-      alert(errorMsg);
     }
   };
 
