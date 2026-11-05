@@ -4,7 +4,7 @@ Lưu giữ minh chứng tham gia các hội thảo, seminar học thuật vĩnh 
 
 ---
 
-##  1. Tổng quan Đề tài
+## 1. Tổng quan Đề tài
 
 - **Vấn đề:** Giấy chứng nhận tham gia hội thảo, seminar học thuật truyền thống dễ bị thất lạc, hư hỏng hoặc làm giả.
 - **Giải pháp Blockchain:** Ứng dụng giao thức bằng chứng tham dự (**POAP - Proof of Attendance Protocol**). Mỗi sự kiện được quản lý và phát hành chứng nhận thông qua Smart Contract trên mạng thử nghiệm **Sepolia Testnet**.
@@ -116,7 +116,7 @@ club-poap-system/
   - Xử lý triệt để các cảnh báo lỗi liên kết thư viện `wagmi` / MetaMask.
 
 ====================
-== Ngày 31/10/2026 (Cập nhật mới): ==
+== Ngày 31/10/2026: ==
 ====================
 
 **A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
@@ -136,7 +136,7 @@ club-poap-system/
 
 **B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
 - [x] **Sửa lỗi 404 khi Claim:** Mã dự phòng trên màn chiếu chỉ hiển thị 4/6 số của mã TOTP nên Backend không xác thực được. Đã sửa `LiveQrStage.tsx` hiển thị đủ 6 số (`#POAP-XXXXXX`).
-- [x] **Hoàn thiện 3 phương thức điểm danh (`ScannerPanel.tsx`)** — trước đây chỉ là giao diện mẫu:
+- [x] **Hoàn thiện 3 phương thức điểm danh (`ScannerPanel.tsx`):**
   - **Nhập mã dự phòng:** Chấp nhận `#POAP-123456`, `123456` hoặc dán link QR.
   - **Quét bằng Camera:** Dùng thư viện `html5-qrcode`, có chọn camera, bỏ qua camera ảo, báo lỗi rõ ràng.
   - **Tải ảnh QR:** Đọc mã QR trực tiếp từ ảnh (PNG, JPG, WEBP).
@@ -146,91 +146,59 @@ club-poap-system/
 - [x] **Sửa lỗi phụ:** Nút "Đổi Mã Ngay" ở chế độ máy chiếu nay đổi mã thật; thêm ví Admin thứ 2.
  
 **D. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân, nhánh `kiet`):**
-- [x] **Backend Bộ sưu tập (`backend/src/routes/collection.js`):** Viết 3 API mới tại `/api/collection`, tách riêng khỏi `events.js` nên không ảnh hưởng code của Tuyen và Trâm. Chỉ đọc dữ liệu từ model `Event`, không ghi gì vào DB.
-  - Tra cứu huy hiệu theo địa chỉ ví (không phân biệt hoa/thường), chỉ hiển thị huy hiệu đã mint thành công (có `txHash`).
+- [x] **Backend Bộ sưu tập (`backend/src/routes/collection.js`):** Viết 3 API mới tại `/api/collection`, tách riêng khỏi `events.js`. Chỉ đọc dữ liệu từ model `Event` và `Attendance`.
+  - Tra cứu huy hiệu theo địa chỉ ví, chỉ hiển thị huy hiệu đã mint thành công (có `txHash`).
   - Hỗ trợ tìm kiếm theo tên sự kiện / đơn vị tổ chức và sắp xếp mới nhất / cũ nhất.
-  - Trả sẵn link ảnh IPFS (Pinata gateway), link giao dịch và link contract trên Sepolia Etherscan.
-  - Kiểm tra địa chỉ ví và mã sự kiện hợp lệ, không bao giờ trả `qrSecret` ra ngoài.
-- [x] **Gắn route vào server:** Thêm 2 dòng `collectionRoutes` vào `backend/src/index.js`.
+  - Trả sẵn link ảnh IPFS, link giao dịch và link contract trên Sepolia Etherscan.
 - [x] **Nối Frontend `/collection` với dữ liệu thật:**
-  - Xóa toàn bộ Mock Data (`MOCK_STATS`, `ALL_6_BADGES`).
-  - Tạo `lib/collectionApi.ts` (gọi API), `hooks/useCollection.ts` (tự tải huy hiệu theo ví MetaMask đang kết nối qua `wagmi`) và `lib/collectionMapper.ts` (chuyển dữ liệu API sang `BadgeItem` của giao diện hiện có).
-  - Họ tên, MSSV, số huy hiệu, điểm rèn luyện được tính từ dữ liệu thật. Ảnh huy hiệu lấy từ IPFS.
-  - Thêm các trạng thái: chưa kết nối ví, đang tải, báo lỗi (có nút Thử Lại), chưa có huy hiệu.
+  - Xóa toàn bộ Mock Data.
+  - Tạo `lib/collectionApi.ts`, `hooks/useCollection.ts` và `lib/collectionMapper.ts`.
+  - Tích hợp trạng thái: chưa kết nối ví, đang tải, báo lỗi, chưa có huy hiệu.
 
 ====================
 == Ngày 05/11/2026: ==
 ====================
 
 **B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
-- [x] **Merge nhánh `kiet` vào `tram`:** Lấy đủ file Bộ sưu tập (`useCollection`, `collectionMapper`, `collection.js`); thêm lại nút `ConnectWalletButton` ở trang chủ bị mất sau merge.
+- [x] **Merge nhánh `kiet` vào `tram`:** Lấy đủ file Bộ sưu tập; thêm lại nút `ConnectWalletButton` ở trang chủ.
 - [x] **Xác thực ví bằng chữ ký MetaMask:**
-  - **API mới `POST /student-challenge`:** Sinh thông điệp có nonce ngẫu nhiên (dùng 1 lần, hết hạn 5 phút) để sinh viên ký.
-  - **`POST /student-checkin`:** Kiểm tra chữ ký bằng `ethers.verifyMessage`, khớp ví mới cho điểm danh; MSSV/họ tên lấy từ thông điệp đã ký. Chống giả mạo ví và replay attack.
-  - **`POST /record-success`:** Chỉ nhận `claimTicket` (vé dùng 1 lần, 10 phút) + `txHash`, không thể gọi thẳng API để ghi huy hiệu giả.
-- [x] **Ràng buộc định danh:** 1 ví chỉ gắn 1 MSSV và ngược lại (`WALLET_BOUND`, `STUDENT_BOUND`); họ tên phải khớp lần trước (`NAME_MISMATCH`). Frontend tự điền và khóa ô MSSV/Họ tên khi ví đã liên kết.
-- [x] **Dữ liệu sự kiện thật ở `/checkin`:** API mới `POST /student-preview` trả tên, ảnh IPFS, thời gian, số người đã điểm danh ngay sau khi quét mã; báo lỗi mã sai/hết hạn ngay. Xóa toàn bộ dữ liệu cứng.
-- [x] **Sửa luồng Claim (`EventDetailsPanel.tsx`):** Hết kẹt "Đang Ký Giao Dịch Sepolia..."; xử lý lỗi 400/401/404/409 trong khung lỗi thay vì màn hình đỏ Next.js; nút "Xem Bộ Sưu Tập" chuyển trang.
-- [x] **Sửa camera (`ScannerPanel.tsx`):** Tắt camera tắt hẳn đèn webcam; sửa lệch khung nút "Bật camera".
-- [x] **Sửa Bộ sưu tập trống (`collection.js`, phối hợp Kiệt):** Đổi sang đọc collection `Attendance` (nơi `record-success` lưu) thay vì `Event.attendees`; sửa link ảnh IPFS bị lặp `ipfs://`.
-- [x] **Lưu ý khi pull:** Chạy `npm install ethers` trong `backend`; body `student-checkin` và `record-success` đã đổi (xem mục 5).
+  - **`POST /student-challenge`:** Sinh thông điệp có nonce ngẫu nhiên (hết hạn 5 phút).
+  - **`POST /student-checkin`:** Kiểm tra chữ ký bằng `ethers.verifyMessage`, khớp ví mới cho điểm danh.
+  - **`POST /record-success`:** Nhận `claimTicket` + `txHash`.
+- [x] **Ràng buộc định danh & Dữ liệu sự kiện thật (`/checkin`):** 1 ví gắn 1 MSSV; API `POST /student-preview` trả thông tin sự kiện.
+
+**C. Đã hoàn thành (Người 1 - Tuyen - Smart Contract & Blockchain Integration):**
+- [x] **Triển khai Smart Contract chuẩn ERC-5192 (Soulbound Token):**
+  - Viết và biên dịch hợp đồng `ClubPOAP.sol` tích hợp OpenZeppelin v5, hỗ trợ khóa vĩnh viễn (Non-transferable) và chặn hàm `transferFrom`.
+  - Cấu hình Hardhat (`hardhat.config.js`) nhắm mục tiêu EVM Cancun tương thích chuẩn Solidity `0.8.24`.
+- [x] **Deploy thành công lên mạng Sepolia Testnet:**
+  - Địa chỉ Smart Contract chính thức: `0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`
+  - Đã lưu ABI vào `frontend/src/lib/contractABI.json` và cập nhật biến môi trường `CONTRACT_ADDRESS` / `NEXT_PUBLIC_CONTRACT_ADDRESS`.
+- [x] **Tích hợp Web3 Write Contract vào phân hệ Admin (`CreateEventForm.tsx`):**
+  - Sử dụng thư viện `wagmi` (`useWriteContract`) để sau khi tạo sự kiện trên Database thành công, cửa sổ MetaMask tự động bật lên yêu cầu Admin ký giao dịch `createEvent` đưa sự kiện lên Blockchain on-chain.
 
 ---
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
 
-Dưới đây là danh sách 10 API đã hoàn thiện tại `http://localhost:5000/api/events`
+Danh sách các API hoàn thiện tại `http://localhost:5000/api/events`:
 
-1. **`POST /`**: Tạo sự kiện mới. (Nhận `FormData` gồm ảnh, tên, thời gian, số lượng. Trả về thông tin sự kiện sau khi đẩy lên IPFS).
-2. **`GET /`**: Lấy danh sách toàn bộ sự kiện để đổ vào Bảng Quản trị.
-3. **`GET /:id/qr-token`**: Lấy mã TOTP hiện tại để chiếu lên màn hình. Trả về `token`, `refreshInterval`, và `remainingSeconds` (số giây còn lại của mã).
+1. **`POST /`**: Tạo sự kiện mới (Upload ảnh/Metadata lên IPFS, lưu MongoDB, cấu hình `contractAddress`).
+2. **`GET /`**: Lấy danh sách toàn bộ sự kiện cho Bảng Quản trị.
+3. **`GET /:id/qr-token`**: Lấy mã TOTP hiện tại (`token`, `refreshInterval`, `remainingSeconds`).
 4. **`PATCH /:id/status`**: Đóng/Mở trạng thái sự kiện (`upcoming`, `open`, `closed`).
-5. **`POST /verify-qr`**: Kiểm tra mã QR (API cũ, trang `/checkin` hiện dùng `student-preview` thay thế).
-   - Body gửi lên: `{ "eventId": "...", "qrToken": "..." }`
-   - Trả về `200` kèm `tokenURI` nếu hợp lệ. Trả về `400` nếu mã hết hạn hoặc sự kiện đã đóng.
-6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp, vô hiệu hóa mã cũ.
+5. **`POST /verify-qr`**: Kiểm tra mã QR (API cũ).
+6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp.
 
-**Phân hệ Sinh viên (Trâm) — gọi theo thứ tự 7 → 8 → 9 → (mint) → 10:**
+**Phân hệ Sinh viên (Trâm):**
+7. **`POST /student-preview`**: Lấy thông tin sự kiện sau khi quét/nhập mã.
+8. **`POST /student-challenge`**: Tạo thông điệp có nonce để ký MetaMask.
+9. **`POST /student-checkin`**: Xác thực mã QR + chữ ký ví + ràng buộc ví/MSSV/họ tên + chống claim 2 lần.
+10. **`POST /record-success`**: Ghi lịch sử điểm danh sau khi Mint thành công.
 
-7. **`POST /student-preview` (Trâm)**: Lấy thông tin sự kiện ngay sau khi quét/nhập mã (chưa điểm danh, chưa cần ký).
-   - Body: `{ "eventId" (có thể bỏ trống), "qrToken" }`
-   - Trả về `200` kèm `event`. Lỗi: `INVALID_CODE`, `CODE_EXPIRED`, `EVENT_CLOSED`, `EVENT_FULL` (400), `EVENT_NOT_FOUND`, `NO_OPEN_EVENT` (404).
-8. **`POST /student-challenge` (Trâm)**: Tạo thông điệp có nonce để sinh viên ký bằng MetaMask.
-   - Body: `{ "walletAddress", "studentId", "fullName" }`
-   - Trả về `200` kèm `message`. Nonce dùng 1 lần, hết hạn 5 phút.
-9. **`POST /student-checkin` (Trâm)**: Xác thực mã QR + chữ ký ví + ràng buộc ví/MSSV/họ tên + chống claim 2 lần.
-   - Body: `{ "eventId" (có thể bỏ trống), "qrToken", "walletAddress", "signature" }`
-   - Trả về `200` kèm `eventId`, `tokenURI`, `event`, `claimTicket`.
-   - Lỗi trả `{ code, error }`: như mục 7, thêm `CHALLENGE_EXPIRED`, `SIGNATURE_INVALID` (401), `ALREADY_CLAIMED`, `WALLET_BOUND`, `STUDENT_BOUND`, `NAME_MISMATCH` (409).
-10. **`POST /record-success` (Trâm)**: Ghi lịch sử điểm danh sau khi Mint thành công.
-    - Body: `{ "claimTicket", "txHash" }` — ví/MSSV/sự kiện lấy từ vé, không nhận từ client.
-    - Trả về `201` kèm `currentAttendees`; `401 TICKET_INVALID` nếu vé sai/hết hạn/đã dùng; `409` nếu đã ghi nhận trước đó.
 ---
 
-## 6. NHIỆM VỤ TIẾP THEO (GIAI ĐOẠN 3: BLOCKCHAIN)
+## 6. NHIỆM VỤ TIẾP THEO (HOÀN THIỆN ĐỒ ÁN)
 
-**Dành cho Người 1 (Tuyen) - Bắt đầu vào thư mục `/blockchain`:**
-
-1. **Viết Smart Contract (`ClubPOAP.sol`):**
-   - Viết mã nguồn Solidity theo chuẩn **ERC-5192 (Soulbound NFT)**. Nó kế thừa ERC-721 nhưng phải override hàm `transferFrom` (thêm revert) để đảm bảo NFT đúc ra dính chết vào ví sinh viên, không thể gửi cho người khác.
-   - Viết hàm `createEvent(string memory _eventId, uint256 _capacity)` dành riêng cho Admin (sử dụng modifier `onlyOwner` hoặc AccessControl).
-   - Viết hàm `claimBadge(string memory _eventId, string memory _tokenURI)` cho sinh viên gọi (kèm logic kiểm tra ví đó đã claim chưa, số lượng đã vượt quá `capacity` chưa).
-2. **Deploy lên mạng Sepolia:** Cấu hình Hardhat hoặc Foundry để deploy Smart Contract lên mạng thử nghiệm Sepolia. Lấy địa chỉ Contract.
-3. **Ghép Contract vào Admin Frontend:**
-   - Cập nhật địa chỉ Contract vào `EventTable.tsx` và `LiveQrStage.tsx`.
-   - Cấu hình hàm của nút "Tạo Sự Kiện" ở Frontend: Sau khi Backend lưu MongoDB xong, gọi thêm hook `useWriteContract` của thư viện `wagmi` để MetaMask của Ban tổ chức bật lên ký xác nhận đăng ký sự kiện on-chain.
-
-   **C. Việc còn lại (Người 2 - Trâm):**
-- [x] ~~Khung thông tin sự kiện ở `/checkin` vẫn dùng dữ liệu cứng~~ → đã đổi sang dữ liệu thật (05/11).
-- [ ] Chờ Smart Contract deploy lên Sepolia → gọi `claimBadge` trong `EventDetailsPanel.tsx` (thay `// TODO` và `txHash` giả), chờ giao dịch xác nhận rồi mới gọi `record-success`; bật kiểm tra định dạng `txHash` ở backend.
-- [ ] **Nhóm cần thống nhất ai trả gas:** Mục 2 ghi sinh viên tự ký `claimBadge()` (cần SepoliaETH), nhưng giao diện ghi "Phí gas được nhà trường tài trợ 100%". Chọn (A) backend mint hộ bằng ví nhà trường, hoặc (B) sinh viên tự mint và sửa lại câu trên giao diện.
-- [ ] Đề nghị contract `claimBadge` kiểm tra `claimed[eventId][msg.sender]` để chống nhận trùng ngay on-chain.
-- [ ] Demo bằng điện thoại cần link `https` (ví dụ ngrok).
-
-**E. Việc còn lại (Người 3 - Kiệt):**
-- [ ] Chờ Smart Contract deploy → điền `CONTRACT_ADDRESS` vào `backend/.env`, hiển thị `tokenId` thật thay cho dấu "—".
-- [ ] Thêm bước đối chiếu on-chain (`ethers`: `ownerOf` / `balanceOf`) vào API verify để chống giả mạo chặt hơn.
-- [ ] Thêm `etherscanUrl`, `contractAddress` vào kiểu `BadgeItem` và nối nút "Xem trên Sepolia Etherscan" trong `CredentialModal.tsx`.
-- [ ] Làm bộ lọc học kỳ / đơn vị trong `FilterToolbar.tsx` theo dữ liệu thật thay vì danh sách cố định.
-- [ ] Hoàn thiện nút "Xuất Bảng Điểm" và "Chia Sẻ Hồ Sơ" (hiện chỉ copy link trang).
-- [ ] Điểm rèn luyện mỗi huy hiệu đang mặc định 10, cần thống nhất với nhóm có lưu điểm theo sự kiện hay không.
+- [ ] **Trâm (Người 2):** Cập nhật nút nhận huy hiệu ở `EventDetailsPanel.tsx` gọi hàm `claimBadge` từ Smart Contract thật (`0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`) thay vì dùng `txHash` giả định; bật kiểm tra regex `txHash` ở backend.
+- [ ] **Kiệt (Người 3):** Hoàn thiện liên kết nút "Xem trên Sepolia Etherscan" trong `CredentialModal.tsx`, bổ sung bước xác minh on-chain bằng `ownerOf` / `balanceOf` nếu cần thiết.

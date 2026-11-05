@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { CalendarPlus, Clock, Users, UploadCloud, CheckCircle2 } from "lucide-react";
+import { useWriteContract } from "wagmi";
+import contractABI from "@/lib/contractABI.json";
 import { ClubEvent } from "./types";
 
 interface CreateEventFormProps {
@@ -11,15 +13,20 @@ interface CreateEventFormProps {
 const DEFAULT_BADGE_PREVIEW =
   "https://images.unsplash.com/photo-1642104704074-907c0698cbd9?w=400&auto=format&fit=crop&q=80";
 
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+
 export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps) {
   const [title, setTitle] = useState("");
   const [datetime, setDatetime] = useState("");
   const [maxAttendees, setMaxAttendees] = useState<number | "">(150);
-  const [refreshInterval, setRefreshInterval] = useState<number>(30); // State mới
+  const [refreshInterval, setRefreshInterval] = useState<number>(30);
   
   const [badgePreview, setBadgePreview] = useState<string>(DEFAULT_BADGE_PREVIEW);
   const [fileName, setFileName] = useState<string>("Chưa chọn tệp (Đang dùng ảnh mẫu)");
   const [file, setFile] = useState<File | null>(null); 
+
+  // Kéo hàm ghi dữ liệu lên Smart Contract từ wagmi
+  const { writeContractAsync, isPending } = useWriteContract();
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -41,11 +48,11 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
     formData.append("name", title.trim());
     formData.append("time", datetime.trim());
     formData.append("capacity", maxAttendees.toString());
-    formData.append("refreshInterval", refreshInterval.toString()); // Gửi lên backend
+    formData.append("refreshInterval", refreshInterval.toString());
     formData.append("badgeImage", file); 
 
     try {
-      alert("Đang tải ảnh lên IPFS và tạo sự kiện...");
+      alert("Đang tải dữ liệu lên IPFS và lưu Database...");
       const res = await fetch("http://localhost:5000/api/events", {
         method: "POST",
         body: formData,
@@ -53,7 +60,30 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
 
       if (res.ok) {
         const data = await res.json();
-        onCreateEvent(data.event); 
+        const newEvent = data.event;
+        
+        // --- BƯỚC MỚI: TƯƠNG TÁC VỚI SMART CONTRACT ---
+        try {
+          if (!CONTRACT_ADDRESS) throw new Error("Thiếu địa chỉ CONTRACT_ADDRESS trong .env.local");
+          
+          alert("Đã lưu Database. Vui lòng kiểm tra cửa sổ MetaMask để xác nhận đăng ký sự kiện lên Blockchain!");
+          
+          const txHash = await writeContractAsync({
+            address: CONTRACT_ADDRESS,
+            abi: contractABI,
+            functionName: 'createEvent',
+            args: [newEvent._id, BigInt(newEvent.capacity)], // Đẩy ID và Số lượng lên Blockchain
+          });
+          
+          console.log("Giao dịch On-chain:", txHash);
+          alert("Hoàn tất! Sự kiện đã được kích hoạt trên hệ thống và ghi nhận On-chain.");
+        } catch (err: any) {
+          console.error("Lỗi ký On-chain:", err);
+          alert("Cảnh báo: Sự kiện đã được tạo nhưng chưa ghi lên Blockchain do bạn hủy giao dịch hoặc lỗi mạng.");
+        }
+        // ---------------------------------------------
+
+        onCreateEvent(newEvent); 
         
         setTitle("");
         setDatetime("");
@@ -62,13 +92,13 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
         setBadgePreview(DEFAULT_BADGE_PREVIEW);
         setFile(null);
         setFileName("Chưa chọn tệp (Đang dùng ảnh mẫu)");
-        alert("Tạo sự kiện thành công!");
       } else {
         const err = await res.json();
-        alert("Lỗi: " + err.error);
+        alert("Lỗi server: " + err.error);
       }
     } catch (error) {
-      console.error("Lỗi:", error);
+      console.error("Lỗi ngoại lệ:", error);
+      alert("Không thể kết nối đến server backend!");
     }
   };
 
@@ -93,7 +123,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
           <input
             type="text" required maxLength={120} value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white text-sm rounded-xl px-4 py-3 focus:outline-none"
+            disabled={isPending}
+            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white text-sm rounded-xl px-4 py-3 focus:outline-none disabled:opacity-50"
           />
         </div>
 
@@ -107,7 +138,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
                 required 
                 value={datetime} 
                 onChange={(e) => setDatetime(e.target.value)} 
-                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark]" 
+                disabled={isPending}
+                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark] disabled:opacity-50" 
               />
             </div>
           </div>
@@ -117,7 +149,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
             <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
               <Users className="w-4 h-4 text-slate-400 mr-2.5" />
               <input type="number" min={1} required value={maxAttendees} onChange={(e) => setMaxAttendees(e.target.value === "" ? "" : Number(e.target.value))}
-              className="bg-transparent text-white text-sm w-full focus:outline-none" />
+              disabled={isPending}
+              className="bg-transparent text-white text-sm w-full focus:outline-none disabled:opacity-50" />
             </div>
           </div>
 
@@ -128,7 +161,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
               <select 
                 value={refreshInterval} 
                 onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                className="bg-transparent text-white text-sm w-full focus:outline-none"
+                disabled={isPending}
+                className="bg-transparent text-white text-sm w-full focus:outline-none disabled:opacity-50"
               >
                 <option value={30}>30 Giây</option>
                 <option value={45}>45 Giây</option>
@@ -145,24 +179,32 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
               <img src={badgePreview} alt="Preview" className="w-full h-full object-cover" />
             </div>
             <label className="flex-1 w-full cursor-pointer min-w-0">
-            <div className="w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center">
+            <div className={`w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
               <UploadCloud className="w-6 h-6 text-indigo-400 mb-1 shrink-0" />
               <span className="text-sm font-semibold text-white">Bấm để tải ảnh huy hiệu (Bắt buộc)</span>
               
-              {/* Thêm truncate để cắt tên file dài thành "..." và max-w-full */}
               <span className="text-xs text-slate-400 mt-1 truncate max-w-full px-2" title={fileName}>
                 {fileName}
               </span>
             </div>
-            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+            <input type="file" accept="image/*" onChange={handleImageUpload} disabled={isPending} className="hidden" />
           </label>
           </div>
         </div>
 
         <div className="flex justify-end pt-2">
-          <button type="submit" className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Tạo Sự Kiện & Kích Hoạt QR</span>
+          <button type="submit" disabled={isPending} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm transition ${isPending ? 'bg-slate-700 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
+            {isPending ? (
+              <>
+                <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                <span>Đang xử lý Blockchain...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Tạo Sự Kiện & Kích Hoạt QR</span>
+              </>
+            )}
           </button>
         </div>
       </form>

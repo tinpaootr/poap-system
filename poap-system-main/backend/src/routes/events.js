@@ -63,7 +63,8 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
       ipfsImageHash,
       ipfsMetadataHash,
       qrSecret,
-      refreshInterval: interval
+      refreshInterval: interval,
+      contractAddress: process.env.CONTRACT_ADDRESS
     });
 
     await newEvent.save();
