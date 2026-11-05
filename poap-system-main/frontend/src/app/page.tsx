@@ -14,7 +14,6 @@ export default function Home() {
           <Award className="h-8 w-8 text-indigo-500" />
           <span className="font-bold text-xl tracking-wide">Club POAP</span>
         </div>
-         <ConnectWalletButton />
       </header>
 
       {/* Hero Section */}
