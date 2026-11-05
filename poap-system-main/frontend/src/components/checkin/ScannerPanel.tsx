@@ -40,6 +40,7 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
 
   // ===== Camera =====
   const cameraRef = useRef<any>(null); // instance Html5Qrcode
+  const startingRef = useRef<Promise<any> | null>(null); // promise khi camera đang khởi động
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
@@ -69,15 +70,40 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
 
   // ---------- Camera ----------
   const stopCamera = async () => {
-    const qr = cameraRef.current;
-    if (!qr) return;
-    try {
-      if (qr.isScanning) await qr.stop();
-      qr.clear();
-    } catch {
-      // bỏ qua lỗi khi camera đã tắt sẵn
+    // Nếu camera đang khởi động dở -> chờ khởi động xong rồi mới tắt
+    if (startingRef.current) {
+      try { await startingRef.current; } catch {}
     }
+
+    const qr = cameraRef.current;
     cameraRef.current = null;
+
+    if (qr) {
+      try {
+        if (qr.isScanning) await qr.stop();
+      } catch (e) {
+        console.warn('[camera] lỗi khi stop:', e);
+      }
+    }
+
+    // Chốt chặn: tự tắt mọi track webcam còn sót -> tắt hẳn đèn camera
+    if (typeof document !== 'undefined') {
+      document
+        .querySelectorAll<HTMLVideoElement>(`#${CAMERA_ELEMENT_ID} video`)
+        .forEach((video) => {
+          const stream = video.srcObject as MediaStream | null;
+          stream?.getTracks().forEach((track) => track.stop());
+          video.srcObject = null;
+        });
+    }
+
+    try { qr?.clear(); } catch {}
+
+    // Gỡ style inline mà html5-qrcode gắn vào (position: relative...) -> hết lệch khung
+    if (typeof document !== 'undefined') {
+      document.getElementById(CAMERA_ELEMENT_ID)?.removeAttribute('style');
+    }
+
     setCameraOn(false);
   };
 
@@ -110,7 +136,7 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
       const qr = new Html5Qrcode(CAMERA_ELEMENT_ID);
       cameraRef.current = qr;
 
-      await qr.start(
+      const startPromise = qr.start(
         cameraId,
         { fps: 10, qrbox: { width: 230, height: 230 } },
         async (decodedText: string) => {
@@ -125,6 +151,21 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
           // lỗi từng khung hình (chưa thấy QR) -> bỏ qua
         }
       );
+      startingRef.current = startPromise;
+      try {
+        await startPromise;
+      } finally {
+        startingRef.current = null;
+      }
+
+      // Nếu trong lúc khởi động người dùng đã bấm tắt / đổi tab -> tắt ngay
+      if (cameraRef.current !== qr) {
+        try {
+          await qr.stop();
+          qr.clear();
+        } catch {}
+        return;
+      }
       setCameraOn(true);
     } catch (e: any) {
       // html5-qrcode thường ném ra CHUỖI chứ không phải Error -> gom hết thành text để đọc
@@ -134,6 +175,9 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
       // Dọn instance hỏng
       try { cameraRef.current?.clear(); } catch {}
       cameraRef.current = null;
+      if (typeof document !== 'undefined') {
+        document.getElementById(CAMERA_ELEMENT_ID)?.removeAttribute('style');
+      }
       setCameraOn(false);
 
       let msg = 'Không mở được camera. Hãy thử chọn camera khác, hoặc dùng "Tải Ảnh" / "Nhập Mã".';
@@ -158,15 +202,18 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
     }
   };
 
-  // Tắt camera khi đổi tab hoặc rời trang
+  // Tắt camera khi đổi tab
   useEffect(() => {
     if (activeTab !== 'camera') stopCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // Tắt camera khi rời trang
   useEffect(() => {
     return () => {
       stopCamera();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- Tải ảnh ----------
@@ -186,7 +233,7 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
       const err = submitParsed(decodedText);
       if (err) setUploadError('Ảnh có mã QR nhưng không phải mã điểm danh Club POAP.');
     } catch (err) {
-      console.error('Lỗi đọc ảnh QR:', err);
+      console.warn('Lỗi đọc ảnh QR:', err); // warn để Next.js không bật overlay lỗi đỏ
       setUploadError('Không tìm thấy mã QR trong ảnh. Hãy chụp rõ, đủ sáng và không bị cắt mất góc.');
     } finally {
       setUploading(false);
@@ -233,11 +280,14 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
         {activeTab === 'camera' && (
           <div className="flex flex-col gap-4 animate-fade-in">
             <div className="relative w-full aspect-video rounded-xl bg-[#0b1326] border border-slate-800/50 overflow-hidden flex items-center justify-center shadow-inner">
-              {/* html5-qrcode sẽ chèn <video> vào div này */}
-              <div
-                id={CAMERA_ELEMENT_ID}
-                className="absolute inset-0 !w-full !h-full [&_video]:!w-full [&_video]:!h-full [&_video]:object-cover [&_video]:block"
-              />
+              {/* Wrapper luôn absolute -> style inline của html5-qrcode không đẩy lệch layout */}
+              <div className="absolute inset-0">
+                {/* html5-qrcode sẽ chèn <video> vào div này */}
+                <div
+                  id={CAMERA_ELEMENT_ID}
+                  className="w-full h-full [&_video]:!w-full [&_video]:!h-full [&_video]:object-cover [&_video]:block"
+                />
+              </div>
 
               {!cameraOn && (
                 <div className="relative flex flex-col items-center justify-center p-4 text-center gap-3">
@@ -259,7 +309,7 @@ export default function ScannerPanel({ onScanSuccess }: { onScanSuccess: ScanSuc
                     <span className="text-[11px] font-semibold text-white">Đang quét...</span>
                   </div>
                   <button
-                    onClick={stopCamera}
+                    onClick={() => stopCamera()}
                     className="absolute bottom-3 px-4 py-1.5 rounded-full bg-slate-800/90 hover:bg-slate-700 text-rose-300 text-[11px] font-semibold shadow-md transition-all flex items-center gap-1.5 border border-rose-400/30">
                     <span className="material-symbols-outlined text-[14px]">videocam_off</span>
                     Tắt camera

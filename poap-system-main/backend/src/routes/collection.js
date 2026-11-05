@@ -5,9 +5,14 @@
 //   GET /api/collection/:wallet                    -> Danh sách huy hiệu của ví
 //   GET /api/collection/:wallet/:eventId           -> Chi tiết 1 huy hiệu
 //   GET /api/collection/verify/:eventId/:wallet    -> Xác minh công khai (Nhà trường / Nhà tuyển dụng)
+//
+// [SỬA] Dữ liệu điểm danh được route /api/events/record-success lưu vào collection
+//       Attendance (models/Attendance.js), KHÔNG lưu vào mảng Event.attendees.
+//       => Bộ sưu tập phải đọc từ Attendance rồi ghép với Event.
 
 const express = require('express');
 const Event = require('../models/Event');
+const Attendance = require('../models/Attendance');
 
 const router = express.Router();
 
@@ -18,17 +23,32 @@ const IPFS_GATEWAY = (process.env.PINATA_GATEWAY || 'https://gateway.pinata.clou
 
 // ====== HÀM TIỆN ÍCH ======
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
 
 const isValidWallet = (w) => typeof w === 'string' && WALLET_REGEX.test(w);
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// events.js lưu hash dạng "ipfs://Qm..." -> bỏ tiền tố để ghép với gateway
+const stripIpfs = (hash) => (hash ? String(hash).replace(/^ipfs:\/\//, '') : '');
 
-const ipfsUrl = (hash) => (hash ? `${IPFS_GATEWAY}/${hash}` : null);
+const ipfsUrl = (hash) => (hash ? `${IPFS_GATEWAY}/${stripIpfs(hash)}` : null);
+
+const ipfsUri = (hash) => (hash ? `ipfs://${stripIpfs(hash)}` : null);
 
 const etherscanTx = (txHash) => (txHash ? `${ETHERSCAN_BASE}/tx/${txHash}` : null);
 
 const etherscanContract = () =>
   CONTRACT_ADDRESS ? `${ETHERSCAN_BASE}/address/${CONTRACT_ADDRESS}` : null;
+
+// Thời điểm nhận: ưu tiên claimedAt / createdAt, nếu schema không có timestamps thì lấy từ _id
+const getClaimedAt = (att) => {
+  if (att.claimedAt) return att.claimedAt;
+  if (att.createdAt) return att.createdAt;
+  try {
+    return att._id && typeof att._id.getTimestamp === 'function' ? att._id.getTimestamp() : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Chuyển (event + bản ghi điểm danh) thành object huy hiệu gửi cho Frontend.
@@ -39,48 +59,49 @@ function toBadge(ev, att) {
     eventId: String(ev._id),
     eventName: ev.name || ev.title || ev.eventName || '',
     organizer: ev.organizer || ev.organization || '',
-    eventTime: ev.startTime || ev.startDate || ev.time || ev.date || null,
+    eventTime: ev.time || ev.startTime || ev.startDate || ev.date || null,
     status: ev.status || null,
 
     // Hình ảnh & metadata (IPFS)
     imageUrl: ipfsUrl(ev.ipfsImageHash),
-    tokenURI: ev.tokenURI || (ev.ipfsMetadataHash ? `ipfs://${ev.ipfsMetadataHash}` : null),
+    tokenURI: ev.tokenURI || ipfsUri(ev.ipfsMetadataHash),
     metadataUrl: ipfsUrl(ev.ipfsMetadataHash),
 
     // Thông tin người nhận
     walletAddress: att.walletAddress,
     studentId: att.studentId,
     fullName: att.fullName,
-    claimedAt: att.claimedAt || att.createdAt || null,
+    claimedAt: getClaimedAt(att),
 
     // Blockchain
     txHash: att.txHash || null,
-    contractAddress: CONTRACT_ADDRESS || null,
+    contractAddress: ev.contractAddress || CONTRACT_ADDRESS || null,
     etherscanTxUrl: etherscanTx(att.txHash),
     etherscanContractUrl: etherscanContract(),
   };
 }
 
 /**
- * Tìm các sự kiện mà ví đã điểm danh (không phân biệt hoa/thường địa chỉ ví).
+ * Tìm các lượt điểm danh của ví trong collection Attendance, ghép với Event.
+ * record-success luôn lưu ví dạng chữ thường -> so khớp bằng toLowerCase().
  * Trả về mảng { ev, att }.
  */
 async function findAttendanceByWallet(wallet, eventId = null) {
-  const query = {
-    'attendees.walletAddress': new RegExp(`^${escapeRegex(wallet)}$`, 'i'),
-  };
-  if (eventId) query._id = eventId;
+  const query = { walletAddress: wallet.toLowerCase() };
+  if (eventId) query.eventId = eventId;
 
-  // Không bao giờ trả qrSecret ra ngoài
-  const events = await Event.find(query).select('-qrSecret').lean();
+  const attendances = await Attendance.find(query).lean();
+  if (attendances.length === 0) return [];
+
+  // Lấy thông tin các sự kiện liên quan (không bao giờ trả qrSecret ra ngoài)
+  const eventIds = [...new Set(attendances.map((a) => String(a.eventId)))];
+  const events = await Event.find({ _id: { $in: eventIds } }).select('-qrSecret').lean();
+  const eventMap = new Map(events.map((ev) => [String(ev._id), ev]));
 
   const results = [];
-  for (const ev of events) {
-    for (const att of ev.attendees || []) {
-      if (att.walletAddress && att.walletAddress.toLowerCase() === wallet.toLowerCase()) {
-        results.push({ ev, att });
-      }
-    }
+  for (const att of attendances) {
+    const ev = eventMap.get(String(att.eventId));
+    if (ev) results.push({ ev, att }); // bỏ qua bản ghi mà sự kiện đã bị xóa
   }
   return results;
 }
@@ -96,7 +117,7 @@ router.get('/verify/:eventId/:wallet', async (req, res) => {
     if (!isValidWallet(wallet)) {
       return res.status(400).json({ code: 'INVALID_WALLET', error: 'Địa chỉ ví không hợp lệ.' });
     }
-    if (!/^[a-fA-F0-9]{24}$/.test(eventId)) {
+    if (!OBJECT_ID_REGEX.test(eventId)) {
       return res.status(400).json({ code: 'INVALID_EVENT_ID', error: 'Mã sự kiện không hợp lệ.' });
     }
 
@@ -178,7 +199,7 @@ router.get('/:wallet/:eventId', async (req, res) => {
     if (!isValidWallet(wallet)) {
       return res.status(400).json({ code: 'INVALID_WALLET', error: 'Địa chỉ ví không hợp lệ.' });
     }
-    if (!/^[a-fA-F0-9]{24}$/.test(eventId)) {
+    if (!OBJECT_ID_REGEX.test(eventId)) {
       return res.status(400).json({ code: 'INVALID_EVENT_ID', error: 'Mã sự kiện không hợp lệ.' });
     }
 

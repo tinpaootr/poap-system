@@ -3,6 +3,8 @@ const multer = require('multer');
 const pinataSDK = require('@pinata/sdk');
 const fs = require('fs');
 const speakeasy = require('speakeasy');
+const crypto = require('crypto');
+const ethers = require('ethers'); // npm install ethers - dùng để kiểm tra chữ ký MetaMask
 const Event = require('../models/Event');
 
 // ===== [BỔ SUNG CHO PHẦN SINH VIÊN] Import Attendance Model =====
@@ -203,9 +205,18 @@ router.post('/:id/force-refresh-qr', async (req, res) => {
   }
 });
 
+
 // =====================================================================
-// 🛡️ NGUOI 2: PHÂN HỆ SINH VIÊN (KIỂM TRA TRÙNG VÀ LƯU VẾT)
+// 🛡️ NGUOI 2: PHÂN HỆ SINH VIÊN (XÁC THỰC CHỮ KÝ VÍ + CHỐNG TRÙNG + LƯU VẾT)
 // =====================================================================
+//
+// Luồng bảo mật (giống Sign-In with Ethereum):
+//   1. POST /student-challenge -> backend tạo thông điệp có NONCE ngẫu nhiên (dùng 1 lần, 5 phút)
+//   2. Sinh viên ký thông điệp bằng MetaMask (không tốn gas)
+//   3. POST /student-checkin   -> backend khôi phục địa chỉ từ chữ ký, khớp ví mới cho qua
+//                                 => cấp claimTicket dùng 1 lần (10 phút)
+//   4. POST /record-success    -> CHỈ nhận claimTicket + txHash, không tin ví/MSSV từ client
+//   => Không ai giả mạo ví người khác hay gọi thẳng API để ghi huy hiệu giả được.
 
 // Chuẩn hóa mã: "#POAP-123456" / " 123 456 " -> "123456"
 const normalizeToken = (raw) => String(raw || '').replace(/\D/g, '');
@@ -214,6 +225,20 @@ const normalizeToken = (raw) => String(raw || '').replace(/\D/g, '');
 const STUDENT_ID_REGEX = /^\d{6,12}$/;
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+
+// ---------- Nonce + vé dùng 1 lần (lưu trong RAM, đủ cho đồ án) ----------
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const TICKET_TTL_MS = 10 * 60 * 1000;
+const challenges = new Map(); // wallet -> { message, studentId, fullName, expiresAt }
+const tickets = new Map();    // ticketId -> { eventId, walletAddress, studentId, fullName, expiresAt }
+
+const cleanupExpired = (map) => {
+  const now = Date.now();
+  for (const [key, value] of map) if (value.expiresAt < now) map.delete(key);
+};
+
+// Hỗ trợ cả ethers v6 (ethers.verifyMessage) và v5 (ethers.utils.verifyMessage)
+const verifyMessageFn = ethers.verifyMessage || (ethers.utils && ethers.utils.verifyMessage);
 
 // Thông tin sự kiện công khai trả về cho trang sinh viên (KHÔNG trả qrSecret)
 const toPublicEvent = (event) => ({
@@ -238,18 +263,82 @@ const validateStudent = ({ walletAddress, studentId, fullName }) => {
 };
 
 /**
- * @route   POST /api/events/student-checkin
- * @desc    Xác thực mã QR / mã dự phòng + kiểm tra ví, MSSV, capacity, chống claim 2 lần
+ * Tìm sự kiện đang mở khớp với mã check-in 6 số (TOTP).
+ * Có eventId (quét QR) -> kiểm tra đúng sự kiện đó; không có (nhập mã) -> dò các sự kiện đang mở.
+ * @returns {{ event } | { status, code, error }}
  */
-router.post('/student-checkin', async (req, res) => {
-  try {
-    let { eventId, qrToken, walletAddress, studentId, fullName } = req.body;
-    console.log('[student-checkin] body:', req.body);
+async function findEventByToken(eventId, token) {
+  const verifyToken = (ev) =>
+    speakeasy.totp.verify({
+      secret: ev.qrSecret,
+      encoding: 'base32',
+      token,
+      step: ev.refreshInterval || 30,
+      window: 2
+    });
 
+  let event = null;
+
+  if (eventId && OBJECT_ID_REGEX.test(eventId)) {
+    event = await Event.findById(eventId);
+    if (!event) {
+      return { status: 404, code: 'EVENT_NOT_FOUND', error: 'Không tìm thấy sự kiện.' };
+    }
+    if (event.status !== 'open') {
+      return { status: 400, code: 'EVENT_CLOSED', error: 'Sự kiện này đã đóng cổng điểm danh!' };
+    }
+    if (!verifyToken(event)) {
+      return { status: 400, code: 'CODE_EXPIRED', error: 'Mã check-in không đúng hoặc đã hết hạn. Vui lòng quét lại!' };
+    }
+  } else {
+    const openEvents = await Event.find({ status: 'open' });
+    if (openEvents.length === 0) {
+      return { status: 404, code: 'NO_OPEN_EVENT', error: 'Hiện không có sự kiện nào đang mở điểm danh.' };
+    }
+    event = openEvents.find(verifyToken);
+    if (!event) {
+      return { status: 400, code: 'CODE_EXPIRED', error: 'Mã check-in không đúng hoặc đã hết hạn. Vui lòng quét lại!' };
+    }
+  }
+
+  if (event.capacity && event.currentAttendees >= event.capacity) {
+    return { status: 400, code: 'EVENT_FULL', error: 'Sự kiện đã đủ số lượng người tham dự.' };
+  }
+  return { event };
+}
+
+/**
+ * @route   POST /api/events/student-preview
+ * @body    { eventId?, qrToken }
+ * @desc    Sau khi quét / nhập mã: trả thông tin sự kiện để hiển thị (chưa điểm danh, chưa cần ký)
+ */
+router.post('/student-preview', async (req, res) => {
+  try {
+    const { eventId, qrToken } = req.body || {};
     const token = normalizeToken(qrToken);
     if (token.length !== 6) {
       return res.status(400).json({ code: 'INVALID_CODE', error: 'Mã check-in phải gồm 6 chữ số, ví dụ #POAP-123456.' });
     }
+
+    const found = await findEventByToken(eventId, token);
+    if (found.error) {
+      return res.status(found.status).json({ code: found.code, error: found.error });
+    }
+    res.json({ event: toPublicEvent(found.event) });
+  } catch (err) {
+    console.error('Error previewing event:', err);
+    res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi server khi tải thông tin sự kiện.' });
+  }
+});
+
+/**
+ * @route   POST /api/events/student-challenge
+ * @body    { walletAddress, studentId, fullName }
+ * @desc    Tạo thông điệp (có nonce) để sinh viên ký bằng MetaMask
+ */
+router.post('/student-challenge', async (req, res) => {
+  try {
+    let { walletAddress, studentId, fullName } = req.body || {};
 
     const studentError = validateStudent({ walletAddress, studentId, fullName });
     if (studentError) {
@@ -258,43 +347,82 @@ router.post('/student-checkin', async (req, res) => {
 
     walletAddress = walletAddress.toLowerCase();
     studentId = String(studentId).trim();
+    fullName = String(fullName).trim().replace(/\s+/g, ' ');
 
-    const verifyToken = (ev) =>
-      speakeasy.totp.verify({
-        secret: ev.qrSecret,
-        encoding: 'base32',
-        token,
-        step: ev.refreshInterval || 30,
-        window: 2
-      });
+    cleanupExpired(challenges);
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const message = [
+      'Club POAP - Xác nhận điểm danh',
+      '',
+      `Ví: ${walletAddress}`,
+      `MSSV: ${studentId}`,
+      `Họ tên: ${fullName}`,
+      `Nonce: ${nonce}`,
+      `Thời điểm: ${new Date().toISOString()}`,
+      '',
+      'Ký thông điệp này KHÔNG tốn phí gas và KHÔNG cấp quyền chuyển tài sản.'
+    ].join('\n');
 
-    let event = null;
+    // Mỗi ví chỉ giữ 1 challenge mới nhất
+    challenges.set(walletAddress, {
+      message,
+      studentId,
+      fullName,
+      expiresAt: Date.now() + CHALLENGE_TTL_MS
+    });
 
-    if (eventId && OBJECT_ID_REGEX.test(eventId)) {
-      event = await Event.findById(eventId);
-      if (!event) {
-        return res.status(404).json({ code: 'EVENT_NOT_FOUND', error: 'Không tìm thấy sự kiện.' });
-      }
-      if (event.status !== 'open') {
-        return res.status(400).json({ code: 'EVENT_CLOSED', error: 'Sự kiện này đã đóng cổng điểm danh!' });
-      }
-      if (!verifyToken(event)) {
-        return res.status(400).json({ code: 'CODE_EXPIRED', error: 'Mã check-in không đúng hoặc đã hết hạn. Vui lòng quét lại!' });
-      }
-    } else {
-      const openEvents = await Event.find({ status: 'open' });
-      if (openEvents.length === 0) {
-        return res.status(404).json({ code: 'NO_OPEN_EVENT', error: 'Hiện không có sự kiện nào đang mở điểm danh.' });
-      }
-      event = openEvents.find(verifyToken);
-      if (!event) {
-        return res.status(400).json({ code: 'CODE_EXPIRED', error: 'Mã check-in không đúng hoặc đã hết hạn. Vui lòng quét lại!' });
-      }
+    res.json({ message });
+  } catch (err) {
+    console.error('Error creating challenge:', err);
+    res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi tạo phiên xác thực.' });
+  }
+});
+
+/**
+ * @route   POST /api/events/student-checkin
+ * @body    { eventId?, qrToken, walletAddress, signature }
+ * @desc    Xác thực mã QR + chữ ký ví + kiểm tra MSSV, capacity, chống claim 2 lần
+ */
+router.post('/student-checkin', async (req, res) => {
+  try {
+    let { eventId, qrToken, walletAddress, signature } = req.body || {};
+    console.log('[student-checkin] body:', { eventId, qrToken, walletAddress });
+
+    const token = normalizeToken(qrToken);
+    if (token.length !== 6) {
+      return res.status(400).json({ code: 'INVALID_CODE', error: 'Mã check-in phải gồm 6 chữ số, ví dụ #POAP-123456.' });
+    }
+    if (!walletAddress || !WALLET_REGEX.test(walletAddress)) {
+      return res.status(400).json({ code: 'INVALID_WALLET', error: 'Địa chỉ ví không hợp lệ.' });
+    }
+    walletAddress = walletAddress.toLowerCase();
+
+    // ---- Xác thực chữ ký ví: chứng minh người gửi giữ private key của ví ----
+    const challenge = challenges.get(walletAddress);
+    challenges.delete(walletAddress); // nonce chỉ dùng 1 lần (kể cả khi sai)
+
+    if (!challenge || challenge.expiresAt < Date.now()) {
+      return res.status(401).json({ code: 'CHALLENGE_EXPIRED', error: 'Phiên xác thực không tồn tại hoặc đã hết hạn. Vui lòng thử lại.' });
+    }
+    let recovered = '';
+    try {
+      recovered = verifyMessageFn(challenge.message, signature);
+    } catch {
+      return res.status(401).json({ code: 'SIGNATURE_INVALID', error: 'Chữ ký không hợp lệ.' });
+    }
+    if (String(recovered).toLowerCase() !== walletAddress) {
+      return res.status(401).json({ code: 'SIGNATURE_INVALID', error: 'Chữ ký không khớp với địa chỉ ví.' });
     }
 
-    if (event.capacity && event.currentAttendees >= event.capacity) {
-      return res.status(400).json({ code: 'EVENT_FULL', error: 'Sự kiện đã đủ số lượng người tham dự.' });
+    // MSSV + họ tên lấy từ thông điệp ĐÃ KÝ, không lấy từ request
+    const { studentId, fullName } = challenge;
+
+    // ---- Tìm sự kiện + xác thực mã QR (TOTP) ----
+    const found = await findEventByToken(eventId, token);
+    if (found.error) {
+      return res.status(found.status).json({ code: found.code, error: found.error });
     }
+    const event = found.event;
 
     const existed = await Attendance.findOne({
       eventId: event._id,
@@ -310,44 +438,91 @@ router.post('/student-checkin', async (req, res) => {
       });
     }
 
+    // Một ví chỉ thuộc về một MSSV (kiểm tra trên mọi sự kiện)
+    const walletOwner = await Attendance.findOne({ walletAddress, studentId: { $ne: studentId } });
+    if (walletOwner) {
+      return res.status(409).json({
+        code: 'WALLET_BOUND',
+        error: `Ví này đã được đăng ký cho MSSV ${walletOwner.studentId}. Mỗi ví chỉ dùng cho 1 sinh viên.`
+      });
+    }
+
+    // Một MSSV chỉ dùng một ví (kiểm tra trên mọi sự kiện)
+    const idOwner = await Attendance.findOne({ studentId, walletAddress: { $ne: walletAddress } });
+    if (idOwner) {
+      return res.status(409).json({
+        code: 'STUDENT_BOUND',
+        error: 'MSSV này đã được liên kết với một ví khác. Hãy dùng đúng ví đã đăng ký.'
+      });
+    }
+
+    // Họ tên phải khớp với lần điểm danh trước của MSSV này
+    const normalizeName = (n) => String(n || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+    const previous = await Attendance.findOne({ walletAddress, studentId });
+    if (previous && normalizeName(previous.fullName) !== normalizeName(fullName)) {
+      return res.status(409).json({
+        code: 'NAME_MISMATCH',
+        error: `Họ tên không khớp với thông tin đã đăng ký của MSSV ${studentId}.`
+      });
+    }
+
+    // ---- Cấp vé dùng 1 lần cho bước ghi nhận ----
+    cleanupExpired(tickets);
+    const claimTicket = crypto.randomBytes(24).toString('hex');
+    tickets.set(claimTicket, {
+      eventId: String(event._id),
+      walletAddress,
+      studentId,
+      fullName,
+      expiresAt: Date.now() + TICKET_TTL_MS
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Xác thực hợp lệ!',
       eventId: event._id,
       tokenURI: event.ipfsMetadataHash || event.ipfsImageHash,
-      event: toPublicEvent(event)
+      event: toPublicEvent(event),
+      claimTicket
     });
   } catch (err) {
     console.error('SERVER ERROR:', err);
-    res.status(500).json({ code: 'SERVER_ERROR', error: `Lỗi server: ${err.message}` });
+    res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi server khi điểm danh.' });
   }
 });
 
 /**
  * @route   POST /api/events/record-success
- * @desc    Lưu vết vào MongoDB sau khi sinh viên ký giao dịch thành công trên MetaMask
+ * @body    { claimTicket, txHash }
+ * @desc    Lưu vết vào MongoDB sau khi mint thành công.
+ *          Ví / MSSV / sự kiện lấy từ vé đã xác thực, KHÔNG lấy từ client.
  */
 router.post('/record-success', async (req, res) => {
   try {
-    let { eventId, walletAddress, studentId, fullName, txHash } = req.body;
+    const { claimTicket, txHash } = req.body || {};
 
-    if (!eventId || !OBJECT_ID_REGEX.test(eventId)) {
-      return res.status(400).json({ code: 'INVALID_EVENT', error: 'eventId không hợp lệ.' });
-    }
-    const studentError = validateStudent({ walletAddress, studentId, fullName });
-    if (studentError) {
-      return res.status(400).json({ code: 'INVALID_STUDENT', error: studentError });
+    const ticket = typeof claimTicket === 'string' ? tickets.get(claimTicket) : null;
+    if (ticket) tickets.delete(claimTicket); // vé chỉ dùng 1 lần
+    if (!ticket || ticket.expiresAt < Date.now()) {
+      return res.status(401).json({
+        code: 'TICKET_INVALID',
+        error: 'Phiên điểm danh không hợp lệ hoặc đã hết hạn. Vui lòng quét mã lại.'
+      });
     }
 
-    walletAddress = walletAddress.toLowerCase();
-    studentId = String(studentId).trim();
+    if (!txHash || typeof txHash !== 'string' || txHash.length > 100) {
+      return res.status(400).json({ code: 'INVALID_TX', error: 'Thiếu mã giao dịch (txHash).' });
+    }
+    // TODO: khi đã mint thật trên Sepolia, bật kiểm tra: /^0x[a-fA-F0-9]{64}$/.test(txHash)
+
+    const { eventId, walletAddress, studentId, fullName } = ticket;
 
     const event = await Event.findById(eventId);
     if (!event) {
       return res.status(404).json({ code: 'EVENT_NOT_FOUND', error: 'Không tìm thấy sự kiện.' });
     }
 
-    // Chống ghi trùng (bấm 2 lần / gọi lại API)
+    // Chống ghi trùng (bấm 2 lần / 2 tab cùng lúc)
     const existed = await Attendance.findOne({
       eventId: event._id,
       $or: [{ walletAddress }, { studentId }]
@@ -360,7 +535,7 @@ router.post('/record-success', async (req, res) => {
       eventId: event._id,
       walletAddress,
       studentId,
-      fullName: String(fullName).trim(),
+      fullName,
       txHash
     });
     await newAttendance.save();

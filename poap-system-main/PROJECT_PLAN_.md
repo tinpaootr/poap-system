@@ -158,27 +158,53 @@ club-poap-system/
   - Họ tên, MSSV, số huy hiệu, điểm rèn luyện được tính từ dữ liệu thật. Ảnh huy hiệu lấy từ IPFS.
   - Thêm các trạng thái: chưa kết nối ví, đang tải, báo lỗi (có nút Thử Lại), chưa có huy hiệu.
 
+====================
+== Ngày 05/11/2026: ==
+====================
+
+**B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
+- [x] **Merge nhánh `kiet` vào `tram`:** Lấy đủ file Bộ sưu tập (`useCollection`, `collectionMapper`, `collection.js`); thêm lại nút `ConnectWalletButton` ở trang chủ bị mất sau merge.
+- [x] **Xác thực ví bằng chữ ký MetaMask:**
+  - **API mới `POST /student-challenge`:** Sinh thông điệp có nonce ngẫu nhiên (dùng 1 lần, hết hạn 5 phút) để sinh viên ký.
+  - **`POST /student-checkin`:** Kiểm tra chữ ký bằng `ethers.verifyMessage`, khớp ví mới cho điểm danh; MSSV/họ tên lấy từ thông điệp đã ký. Chống giả mạo ví và replay attack.
+  - **`POST /record-success`:** Chỉ nhận `claimTicket` (vé dùng 1 lần, 10 phút) + `txHash`, không thể gọi thẳng API để ghi huy hiệu giả.
+- [x] **Ràng buộc định danh:** 1 ví chỉ gắn 1 MSSV và ngược lại (`WALLET_BOUND`, `STUDENT_BOUND`); họ tên phải khớp lần trước (`NAME_MISMATCH`). Frontend tự điền và khóa ô MSSV/Họ tên khi ví đã liên kết.
+- [x] **Dữ liệu sự kiện thật ở `/checkin`:** API mới `POST /student-preview` trả tên, ảnh IPFS, thời gian, số người đã điểm danh ngay sau khi quét mã; báo lỗi mã sai/hết hạn ngay. Xóa toàn bộ dữ liệu cứng.
+- [x] **Sửa luồng Claim (`EventDetailsPanel.tsx`):** Hết kẹt "Đang Ký Giao Dịch Sepolia..."; xử lý lỗi 400/401/404/409 trong khung lỗi thay vì màn hình đỏ Next.js; nút "Xem Bộ Sưu Tập" chuyển trang.
+- [x] **Sửa camera (`ScannerPanel.tsx`):** Tắt camera tắt hẳn đèn webcam; sửa lệch khung nút "Bật camera".
+- [x] **Sửa Bộ sưu tập trống (`collection.js`, phối hợp Kiệt):** Đổi sang đọc collection `Attendance` (nơi `record-success` lưu) thay vì `Event.attendees`; sửa link ảnh IPFS bị lặp `ipfs://`.
+- [x] **Lưu ý khi pull:** Chạy `npm install ethers` trong `backend`; body `student-checkin` và `record-success` đã đổi (xem mục 5).
+
 ---
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
 
-Dưới đây là danh sách 8 API đã hoàn thiện tại `http://localhost:5000/api/events`
+Dưới đây là danh sách 10 API đã hoàn thiện tại `http://localhost:5000/api/events`
 
 1. **`POST /`**: Tạo sự kiện mới. (Nhận `FormData` gồm ảnh, tên, thời gian, số lượng. Trả về thông tin sự kiện sau khi đẩy lên IPFS).
 2. **`GET /`**: Lấy danh sách toàn bộ sự kiện để đổ vào Bảng Quản trị.
 3. **`GET /:id/qr-token`**: Lấy mã TOTP hiện tại để chiếu lên màn hình. Trả về `token`, `refreshInterval`, và `remainingSeconds` (số giây còn lại của mã).
 4. **`PATCH /:id/status`**: Đóng/Mở trạng thái sự kiện (`upcoming`, `open`, `closed`).
-5. **`POST /verify-qr` (Người 2 cần dùng)**: Kiểm tra mã QR sinh viên vừa quét.
+5. **`POST /verify-qr`**: Kiểm tra mã QR (API cũ, trang `/checkin` hiện dùng `student-preview` thay thế).
    - Body gửi lên: `{ "eventId": "...", "qrToken": "..." }`
    - Trả về `200` kèm `tokenURI` nếu hợp lệ. Trả về `400` nếu mã hết hạn hoặc sự kiện đã đóng.
 6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp, vô hiệu hóa mã cũ.
-7. **`POST /student-checkin` (Trâm)**: Xác thực mã + thông tin sinh viên trước khi Claim.
-   - Body: `{ "eventId" (có thể bỏ trống), "qrToken", "walletAddress", "studentId", "fullName" }`
-   - Trả về `200` kèm `eventId`, `tokenURI`, `event`. Lỗi trả `{ code, error }`: `CODE_EXPIRED`, `EVENT_CLOSED`, `EVENT_FULL` (400), `NO_OPEN_EVENT` (404), `ALREADY_CLAIMED` (409).
-8. **`POST /record-success` (Trâm)**: Ghi lịch sử điểm danh sau khi Mint thành công.
-   - Body: `{ "eventId", "walletAddress", "studentId", "fullName", "txHash" }`
-   - Trả về `201` kèm `currentAttendees`; `409` nếu đã ghi nhận trước đó.
 
+**Phân hệ Sinh viên (Trâm) — gọi theo thứ tự 7 → 8 → 9 → (mint) → 10:**
+
+7. **`POST /student-preview` (Trâm)**: Lấy thông tin sự kiện ngay sau khi quét/nhập mã (chưa điểm danh, chưa cần ký).
+   - Body: `{ "eventId" (có thể bỏ trống), "qrToken" }`
+   - Trả về `200` kèm `event`. Lỗi: `INVALID_CODE`, `CODE_EXPIRED`, `EVENT_CLOSED`, `EVENT_FULL` (400), `EVENT_NOT_FOUND`, `NO_OPEN_EVENT` (404).
+8. **`POST /student-challenge` (Trâm)**: Tạo thông điệp có nonce để sinh viên ký bằng MetaMask.
+   - Body: `{ "walletAddress", "studentId", "fullName" }`
+   - Trả về `200` kèm `message`. Nonce dùng 1 lần, hết hạn 5 phút.
+9. **`POST /student-checkin` (Trâm)**: Xác thực mã QR + chữ ký ví + ràng buộc ví/MSSV/họ tên + chống claim 2 lần.
+   - Body: `{ "eventId" (có thể bỏ trống), "qrToken", "walletAddress", "signature" }`
+   - Trả về `200` kèm `eventId`, `tokenURI`, `event`, `claimTicket`.
+   - Lỗi trả `{ code, error }`: như mục 7, thêm `CHALLENGE_EXPIRED`, `SIGNATURE_INVALID` (401), `ALREADY_CLAIMED`, `WALLET_BOUND`, `STUDENT_BOUND`, `NAME_MISMATCH` (409).
+10. **`POST /record-success` (Trâm)**: Ghi lịch sử điểm danh sau khi Mint thành công.
+    - Body: `{ "claimTicket", "txHash" }` — ví/MSSV/sự kiện lấy từ vé, không nhận từ client.
+    - Trả về `201` kèm `currentAttendees`; `401 TICKET_INVALID` nếu vé sai/hết hạn/đã dùng; `409` nếu đã ghi nhận trước đó.
 ---
 
 ## 6. NHIỆM VỤ TIẾP THEO (GIAI ĐOẠN 3: BLOCKCHAIN)
@@ -195,8 +221,10 @@ Dưới đây là danh sách 8 API đã hoàn thiện tại `http://localhost:50
    - Cấu hình hàm của nút "Tạo Sự Kiện" ở Frontend: Sau khi Backend lưu MongoDB xong, gọi thêm hook `useWriteContract` của thư viện `wagmi` để MetaMask của Ban tổ chức bật lên ký xác nhận đăng ký sự kiện on-chain.
 
    **C. Việc còn lại (Người 2 - Trâm):**
-- [ ] Chờ Smart Contract deploy lên Sepolia → gọi `claimBadge` trong `EventDetailsPanel.tsx`, chỉ gọi `record-success` sau khi giao dịch thành công.
-- [ ] Khung thông tin sự kiện ở `/checkin` vẫn dùng dữ liệu cứng → đổi sang dữ liệu thật từ API.
+- [x] ~~Khung thông tin sự kiện ở `/checkin` vẫn dùng dữ liệu cứng~~ → đã đổi sang dữ liệu thật (05/11).
+- [ ] Chờ Smart Contract deploy lên Sepolia → gọi `claimBadge` trong `EventDetailsPanel.tsx` (thay `// TODO` và `txHash` giả), chờ giao dịch xác nhận rồi mới gọi `record-success`; bật kiểm tra định dạng `txHash` ở backend.
+- [ ] **Nhóm cần thống nhất ai trả gas:** Mục 2 ghi sinh viên tự ký `claimBadge()` (cần SepoliaETH), nhưng giao diện ghi "Phí gas được nhà trường tài trợ 100%". Chọn (A) backend mint hộ bằng ví nhà trường, hoặc (B) sinh viên tự mint và sửa lại câu trên giao diện.
+- [ ] Đề nghị contract `claimBadge` kiểm tra `claimed[eventId][msg.sender]` để chống nhận trùng ngay on-chain.
 - [ ] Demo bằng điện thoại cần link `https` (ví dụ ngrok).
 
 **E. Việc còn lại (Người 3 - Kiệt):**
