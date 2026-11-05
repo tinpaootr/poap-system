@@ -558,4 +558,19 @@ router.post('/record-success', async (req, res) => {
   }
 });
 
+// ==========================================
+// API LẤY DANH SÁCH SINH VIÊN ĐÃ ĐIỂM DANH THEO SỰ KIỆN (CHO ADMIN)
+// ==========================================
+router.get('/:id/attendees', async (req, res) => {
+  try {
+    const attendees = await Attendance.find({ eventId: req.params.id })
+      .sort({ claimedAt: -1 })
+      .lean();
+    res.json({ total: attendees.length, attendees });
+  } catch (error) {
+    console.error('Lỗi lấy danh sách điểm danh:', error);
+    res.status(500).json({ error: 'Lỗi server khi tải danh sách sinh viên' });
+  }
+});
+
 module.exports = router;
