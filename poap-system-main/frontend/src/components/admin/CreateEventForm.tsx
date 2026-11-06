@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { CalendarPlus, Clock, Users, UploadCloud, CheckCircle2 } from "lucide-react";
+import {
+  CalendarPlus,
+  Clock,
+  Users,
+  UploadCloud,
+  CheckCircle2,
+  Building2,
+} from "lucide-react";
 import { useWriteContract } from "wagmi";
 import contractABI from "@/lib/contractABI.json";
 import { ClubEvent } from "./types";
@@ -15,23 +22,32 @@ const DEFAULT_BADGE_PREVIEW =
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 
+const ORGANIZER_OPTIONS = [
+  "Khoa CNTT",
+  "CLB Tin Học",
+  "Đoàn Thanh Niên",
+  "Hội Sinh Viên",
+];
+
 export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps) {
   const [title, setTitle] = useState("");
+  const [organizer, setOrganizer] = useState("Khoa CNTT");
   const [datetime, setDatetime] = useState("");
   const [maxAttendees, setMaxAttendees] = useState<number | "">(150);
   const [refreshInterval, setRefreshInterval] = useState<number>(30);
-  
+
   const [badgePreview, setBadgePreview] = useState<string>(DEFAULT_BADGE_PREVIEW);
   const [fileName, setFileName] = useState<string>("Chưa chọn tệp (Đang dùng ảnh mẫu)");
-  const [file, setFile] = useState<File | null>(null); 
+  const [file, setFile] = useState<File | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>("");
 
-  // Kéo hàm ghi dữ liệu lên Smart Contract từ wagmi
   const { writeContractAsync, isPending } = useWriteContract();
+  const isBusy = isPending || Boolean(statusMessage);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      setFile(selectedFile); 
+      setFile(selectedFile);
       setBadgePreview(URL.createObjectURL(selectedFile));
       setFileName(selectedFile.name);
     }
@@ -46,13 +62,14 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
 
     const formData = new FormData();
     formData.append("name", title.trim());
+    formData.append("organizer", organizer);
     formData.append("time", datetime.trim());
     formData.append("capacity", maxAttendees.toString());
     formData.append("refreshInterval", refreshInterval.toString());
-    formData.append("badgeImage", file); 
+    formData.append("badgeImage", file);
 
     try {
-      alert("Đang tải dữ liệu lên IPFS và lưu Database...");
+      setStatusMessage("Đang tải ảnh lên IPFS & lưu Database...");
       const res = await fetch("http://localhost:5000/api/events", {
         method: "POST",
         body: formData,
@@ -61,31 +78,31 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
       if (res.ok) {
         const data = await res.json();
         const newEvent = data.event;
-        
-        // --- BƯỚC MỚI: TƯƠNG TÁC VỚI SMART CONTRACT ---
+
         try {
-          if (!CONTRACT_ADDRESS) throw new Error("Thiếu địa chỉ CONTRACT_ADDRESS trong .env.local");
-          
-          alert("Đã lưu Database. Vui lòng kiểm tra cửa sổ MetaMask để xác nhận đăng ký sự kiện lên Blockchain!");
-          
+          if (!CONTRACT_ADDRESS)
+            throw new Error("Thiếu địa chỉ CONTRACT_ADDRESS trong .env.local");
+
+          setStatusMessage("Vui lòng xác nhận giao dịch trong ví MetaMask...");
           const txHash = await writeContractAsync({
             address: CONTRACT_ADDRESS,
             abi: contractABI,
-            functionName: 'createEvent',
-            args: [newEvent._id, BigInt(newEvent.capacity)], // Đẩy ID và Số lượng lên Blockchain
+            functionName: "createEvent",
+            args: [newEvent._id, BigInt(newEvent.capacity)],
           });
-          
+
           console.log("Giao dịch On-chain:", txHash);
-          alert("Hoàn tất! Sự kiện đã được kích hoạt trên hệ thống và ghi nhận On-chain.");
         } catch (err: any) {
           console.error("Lỗi ký On-chain:", err);
-          alert("Cảnh báo: Sự kiện đã được tạo nhưng chưa ghi lên Blockchain do bạn hủy giao dịch hoặc lỗi mạng.");
+          alert(
+            "Sự kiện đã được lưu vào Database nhưng chưa ghi lên Blockchain (do hủy ký hoặc lỗi mạng Sepolia)."
+          );
         }
-        // ---------------------------------------------
 
-        onCreateEvent(newEvent); 
-        
+        onCreateEvent(newEvent);
+
         setTitle("");
+        setOrganizer("Khoa CNTT");
         setDatetime("");
         setMaxAttendees(150);
         setRefreshInterval(30);
@@ -99,6 +116,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
     } catch (error) {
       console.error("Lỗi ngoại lệ:", error);
       alert("Không thể kết nối đến server backend!");
+    } finally {
+      setStatusMessage("");
     }
   };
 
@@ -111,58 +130,105 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
           </div>
           <div>
             <h2 className="text-lg font-bold text-white">Khởi Tạo Sự Kiện Mới</h2>
-            <p className="text-xs text-slate-400">Đăng ký thông tin hội thảo và cấu hình huy hiệu</p>
+            <p className="text-xs text-slate-400">
+              Đăng ký thông tin hội thảo và cấu hình huy hiệu
+            </p>
           </div>
         </div>
-        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">ERC-5192 Soulbound</span>
+        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+          ERC-5192 Soulbound
+        </span>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-200">Tên hội thảo / Sự kiện <span className="text-rose-400">*</span></label>
-          <input
-            type="text" required maxLength={120} value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={isPending}
-            className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white text-sm rounded-xl px-4 py-3 focus:outline-none disabled:opacity-50"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          <div className="md:col-span-8 flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-200">
+              Tên hội thảo / Sự kiện <span className="text-rose-400">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              maxLength={120}
+              placeholder="VD: Hội thảo AI & Ứng dụng Web3 2026"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={isBusy}
+              className="w-full bg-[#0b1326] border border-slate-800 focus:border-indigo-500 text-white placeholder:text-slate-500 text-sm rounded-xl px-4 py-3 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+
+          <div className="md:col-span-4 flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-200">
+              Đơn vị tổ chức <span className="text-rose-400">*</span>
+            </label>
+            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-3">
+              <Building2 className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+              <select
+                value={organizer}
+                onChange={(e) => setOrganizer(e.target.value)}
+                disabled={isBusy}
+                className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50"
+              >
+                {ORGANIZER_OPTIONS.map((org) => (
+                  <option key={org} value={org}>
+                    {org}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-200">Thời gian diễn ra <span className="text-rose-400">*</span></label>
+            <label className="text-sm font-medium text-slate-200">
+              Thời gian diễn ra <span className="text-rose-400">*</span>
+            </label>
             <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
               <Clock className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
-              <input 
-                type="datetime-local" 
-                required 
-                value={datetime} 
-                onChange={(e) => setDatetime(e.target.value)} 
-                disabled={isPending}
-                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark] disabled:opacity-50" 
+              <input
+                type="datetime-local"
+                required
+                value={datetime}
+                onChange={(e) => setDatetime(e.target.value)}
+                disabled={isBusy}
+                className="bg-transparent text-white text-sm w-full focus:outline-none [color-scheme:dark] disabled:opacity-50"
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-200">Số lượng sinh viên <span className="text-rose-400">*</span></label>
+            <label className="text-sm font-medium text-slate-200">
+              Số lượng sinh viên <span className="text-rose-400">*</span>
+            </label>
             <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
               <Users className="w-4 h-4 text-slate-400 mr-2.5" />
-              <input type="number" min={1} required value={maxAttendees} onChange={(e) => setMaxAttendees(e.target.value === "" ? "" : Number(e.target.value))}
-              disabled={isPending}
-              className="bg-transparent text-white text-sm w-full focus:outline-none disabled:opacity-50" />
+              <input
+                type="number"
+                min={1}
+                required
+                value={maxAttendees}
+                onChange={(e) =>
+                  setMaxAttendees(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                disabled={isBusy}
+                className="bg-transparent text-white text-sm w-full focus:outline-none disabled:opacity-50"
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-200">Đổi mã QR sau <span className="text-rose-400">*</span></label>
+            <label className="text-sm font-medium text-slate-200">
+              Đổi mã QR sau <span className="text-rose-400">*</span>
+            </label>
             <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-2.5">
               <Clock className="w-4 h-4 text-slate-400 mr-2.5" />
-              <select 
-                value={refreshInterval} 
+              <select
+                value={refreshInterval}
                 onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                disabled={isPending}
-                className="bg-transparent text-white text-sm w-full focus:outline-none disabled:opacity-50"
+                disabled={isBusy}
+                className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50"
               >
                 <option value={30}>30 Giây</option>
                 <option value={45}>45 Giây</option>
@@ -179,25 +245,47 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
               <img src={badgePreview} alt="Preview" className="w-full h-full object-cover" />
             </div>
             <label className="flex-1 w-full cursor-pointer min-w-0">
-            <div className={`w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
-              <UploadCloud className="w-6 h-6 text-indigo-400 mb-1 shrink-0" />
-              <span className="text-sm font-semibold text-white">Bấm để tải ảnh huy hiệu (Bắt buộc)</span>
-              
-              <span className="text-xs text-slate-400 mt-1 truncate max-w-full px-2" title={fileName}>
-                {fileName}
-              </span>
-            </div>
-            <input type="file" accept="image/*" onChange={handleImageUpload} disabled={isPending} className="hidden" />
-          </label>
+              <div
+                className={`w-full p-4 rounded-xl bg-[#131b2e] hover:bg-slate-800/70 transition border border-dashed border-indigo-500/40 flex flex-col items-center justify-center overflow-hidden text-center ${
+                  isBusy ? "opacity-50 pointer-events-none" : ""
+                }`}
+              >
+                <UploadCloud className="w-6 h-6 text-indigo-400 mb-1 shrink-0" />
+                <span className="text-sm font-semibold text-white">
+                  Bấm để tải ảnh huy hiệu (Bắt buộc)
+                </span>
+                <span
+                  className="text-xs text-slate-400 mt-1 truncate max-w-full px-2"
+                  title={fileName}
+                >
+                  {fileName}
+                </span>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={isBusy}
+                className="hidden"
+              />
+            </label>
           </div>
         </div>
 
         <div className="flex justify-end pt-2">
-          <button type="submit" disabled={isPending} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm transition ${isPending ? 'bg-slate-700 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
-            {isPending ? (
+          <button
+            type="submit"
+            disabled={isBusy}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm transition ${
+              isBusy ? "bg-slate-700 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500"
+            }`}
+          >
+            {isBusy ? (
               <>
-                <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                <span>Đang xử lý Blockchain...</span>
+                <span className="material-symbols-outlined text-[16px] animate-spin">
+                  progress_activity
+                </span>
+                <span>{statusMessage || "Đang xử lý Blockchain..."}</span>
               </>
             ) : (
               <>

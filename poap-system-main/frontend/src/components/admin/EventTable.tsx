@@ -11,6 +11,7 @@ import {
   X,
   Download,
   ExternalLink,
+  Eye,
 } from "lucide-react";
 import { ClubEvent, EventStatus } from "./types";
 
@@ -31,6 +32,19 @@ interface AttendeeRecord {
   txHash?: string;
 }
 
+const formatDateTime = (raw?: string) => {
+  if (!raw) return "Chưa cập nhật";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
 export default function EventTable({
   events,
   activeEventId,
@@ -40,7 +54,6 @@ export default function EventTable({
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  // State cho Modal xem danh sách sinh viên điểm danh
   const [selectedEventForList, setSelectedEventForList] = useState<ClubEvent | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRecord[]>([]);
   const [loadingAttendees, setLoadingAttendees] = useState(false);
@@ -55,7 +68,6 @@ export default function EventTable({
     return matchesSearch && matchesStatus;
   });
 
-  // Gọi API lấy danh sách sinh viên của sự kiện
   const handleOpenAttendeeModal = async (ev: ClubEvent) => {
     setSelectedEventForList(ev);
     setStudentSearch("");
@@ -76,11 +88,17 @@ export default function EventTable({
     }
   };
 
-  // Xuất danh sách điểm danh ra file CSV (mở được bằng Excel không lỗi font)
   const handleExportCSV = () => {
     if (!selectedEventForList || attendees.length === 0) return;
 
-    const headers = ["STT", "MSSV", "Họ và Tên", "Địa chỉ Ví MetaMask", "Thời gian điểm danh", "Mã giao dịch (TxHash)"];
+    const headers = [
+      "STT",
+      "MSSV",
+      "Họ và Tên",
+      "Địa chỉ Ví MetaMask",
+      "Thời gian điểm danh",
+      "Mã giao dịch (TxHash)",
+    ];
     const rows = attendees.map((att, idx) => [
       idx + 1,
       `"${att.studentId}"`,
@@ -91,14 +109,16 @@ export default function EventTable({
     ]);
 
     const csvContent =
-      "\uFEFF" +
-      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `DiemDanh_${selectedEventForList.name.replace(/\s+/g, "_")}.csv`);
+    link.setAttribute(
+      "download",
+      `DiemDanh_${selectedEventForList.name.replace(/\s+/g, "_")}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -114,7 +134,6 @@ export default function EventTable({
   return (
     <>
       <div className="bg-[#131b2e] border border-slate-800/80 rounded-2xl p-6 md:p-8 shadow-xl flex flex-col gap-6">
-        {/* Header & Thanh tìm kiếm / Bộ lọc */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-white">
@@ -126,7 +145,6 @@ export default function EventTable({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Bộ lọc trạng thái */}
             <div className="flex items-center bg-[#0b1326] p-1 rounded-xl border border-slate-800 text-xs">
               {[
                 { id: "all", label: "Tất cả" },
@@ -148,7 +166,6 @@ export default function EventTable({
               ))}
             </div>
 
-            {/* Ô tìm kiếm */}
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
               <input
@@ -162,7 +179,6 @@ export default function EventTable({
           </div>
         </div>
 
-        {/* Bảng dữ liệu */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -177,6 +193,9 @@ export default function EventTable({
             <tbody className="divide-y divide-slate-800/70 text-sm">
               {filteredEvents.map((ev) => {
                 const isSelected = ev._id === activeEventId;
+                const isFull =
+                  ev.capacity > 0 && (ev.currentAttendees ?? 0) >= ev.capacity;
+
                 return (
                   <tr
                     key={ev._id}
@@ -184,7 +203,6 @@ export default function EventTable({
                       isSelected ? "bg-indigo-500/10" : "hover:bg-slate-800/40"
                     }`}
                   >
-                    {/* Cột 1: Ảnh Badge + Tên sự kiện */}
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
                         <img
@@ -196,9 +214,16 @@ export default function EventTable({
                           className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
                         />
                         <div>
-                          <p className="font-semibold text-white line-clamp-1">
-                            {ev.name}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-white line-clamp-1">
+                              {ev.name}
+                            </p>
+                            {ev.organizer && (
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-300 text-[10px] font-medium shrink-0">
+                                {ev.organizer}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs font-mono text-slate-400">
                             ID: {ev._id} • Contract:{" "}
                             {ev.contractAddress || "Chưa triển khai"}
@@ -207,12 +232,10 @@ export default function EventTable({
                       </div>
                     </td>
 
-                    {/* Cột 2: Thời gian */}
                     <td className="py-4 px-4 whitespace-nowrap text-slate-300 text-xs">
-                      {ev.time}
+                      {formatDateTime(ev.time)}
                     </td>
 
-                    {/* Cột 3: Số lượng (Bấm thẳng vào ô này để xem danh sách SV) */}
                     <td className="py-4 px-4 whitespace-nowrap">
                       <button
                         onClick={() => handleOpenAttendeeModal(ev)}
@@ -229,9 +252,8 @@ export default function EventTable({
                       </button>
                     </td>
 
-                    {/* Cột 4: Nhãn Trạng thái */}
                     <td className="py-4 px-4 whitespace-nowrap">
-                      {ev.status === "open" && (
+                      {ev.status === "open" && !isFull && (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-xs font-medium border border-emerald-500/20">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                           Đang mở điểm danh
@@ -243,18 +265,17 @@ export default function EventTable({
                           Sắp diễn ra
                         </span>
                       )}
-                      {ev.status === "closed" && (
+                      {(ev.status === "closed" || isFull) && (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-400 text-xs font-medium">
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Đã kết thúc
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                          {isFull ? "Đã đủ số lượng" : "Đã kết thúc"}
                         </span>
                       )}
                     </td>
 
-                    {/* Cột 5: Nút thao tác */}
                     <td className="py-4 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
-                        {ev.status === "open" && (
+                        {ev.status === "open" && !isFull && (
                           <>
                             <button
                               onClick={() => onSelectForQr(ev, true)}
@@ -286,16 +307,26 @@ export default function EventTable({
                           </button>
                         )}
 
-                        {ev.status === "closed" && (
-                          <button
-                            onClick={() => {
-                              onUpdateStatus(ev._id, "open");
-                              onSelectForQr({ ...ev, status: "open" }, false);
-                            }}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
-                          >
-                            Mở lại QR
-                          </button>
+                        {(ev.status === "closed" || isFull) && (
+                          isFull ? (
+                            <button
+                              onClick={() => onSelectForQr(ev, false)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Xem trạng thái</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                onUpdateStatus(ev._id, "open");
+                                onSelectForQr({ ...ev, status: "open" }, false);
+                              }}
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+                            >
+                              Mở lại QR
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -307,14 +338,14 @@ export default function EventTable({
         </div>
       </div>
 
-      {/* MODAL HIỂN THỊ DANH SÁCH SINH VIÊN ĐÃ ĐIỂM DANH */}
       {selectedEventForList && (
         <div
-          onClick={(e) => e.target === e.currentTarget && setSelectedEventForList(null)}
+          onClick={(e) =>
+            e.target === e.currentTarget && setSelectedEventForList(null)
+          }
           className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <div className="bg-[#131b2e] border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Header Modal */}
             <div className="p-6 border-b border-slate-800 flex items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
@@ -324,7 +355,11 @@ export default function EventTable({
                   {selectedEventForList.name}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Tổng cộng: <span className="text-emerald-400 font-semibold">{attendees.length}</span> / {selectedEventForList.capacity} sinh viên
+                  Tổng cộng:{" "}
+                  <span className="text-emerald-400 font-semibold">
+                    {attendees.length}
+                  </span>{" "}
+                  / {selectedEventForList.capacity} sinh viên
                 </p>
               </div>
 
@@ -347,7 +382,6 @@ export default function EventTable({
               </div>
             </div>
 
-            {/* Thanh tìm kiếm MSSV / Họ tên trong Modal */}
             <div className="px-6 py-3 bg-[#0b1326]/60 border-b border-slate-800 flex items-center justify-between gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -364,7 +398,6 @@ export default function EventTable({
               </span>
             </div>
 
-            {/* Nội dung bảng danh sách */}
             <div className="p-6 overflow-y-auto flex-1">
               {loadingAttendees ? (
                 <div className="py-12 text-center text-slate-400 text-sm">
@@ -384,15 +417,20 @@ export default function EventTable({
                         <th className="py-3 px-3">Họ và Tên</th>
                         <th className="py-3 px-3">Địa chỉ Ví</th>
                         <th className="py-3 px-3">Thời gian</th>
-                        <th className="py-3 px-3 text-right rounded-r-lg">Giao dịch On-chain</th>
+                        <th className="py-3 px-3 text-right rounded-r-lg">
+                          Giao dịch On-chain
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/70 text-slate-200">
                       {filteredAttendees.map((att, index) => {
-                        const isRealTx = att.txHash && /^0x[a-fA-F0-9]{64}$/.test(att.txHash);
+                        const isRealTx =
+                          att.txHash && /^0x[a-fA-F0-9]{64}$/.test(att.txHash);
                         return (
                           <tr key={att._id} className="hover:bg-slate-800/40">
-                            <td className="py-3 px-3 text-slate-500 font-mono">{index + 1}</td>
+                            <td className="py-3 px-3 text-slate-500 font-mono">
+                              {index + 1}
+                            </td>
                             <td className="py-3 px-3 font-mono font-semibold text-cyan-400">
                               {att.studentId}
                             </td>
@@ -400,7 +438,8 @@ export default function EventTable({
                               {att.fullName}
                             </td>
                             <td className="py-3 px-3 font-mono text-indigo-300">
-                              {att.walletAddress.slice(0, 6)}...{att.walletAddress.slice(-4)}
+                              {att.walletAddress.slice(0, 6)}...
+                              {att.walletAddress.slice(-4)}
                             </td>
                             <td className="py-3 px-3 text-slate-400">
                               {new Date(att.claimedAt).toLocaleString("vi-VN")}

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  organizer: { type: String, default: 'Khoa CNTT' },
   time: { type: String, required: true },
   capacity: { type: Number, required: true },
   currentAttendees: { type: Number, default: 0 }, // FIX LỖI 3: Số lượng SV đã nhận mặc định là 0

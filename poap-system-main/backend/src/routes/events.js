@@ -19,8 +19,9 @@ const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECR
 // ==========================================
 router.post('/', upload.single('badgeImage'), async (req, res) => {
   try {
-    const { name, time, capacity, refreshInterval } = req.body;
-    const interval = parseInt(refreshInterval) || 30; // Mặc định 30s
+    const { name, organizer, time, capacity, refreshInterval } = req.body;
+    const interval = parseInt(refreshInterval) || 30;
+    const orgName = organizer || 'Khoa CNTT';
 
     // Bước 1: Đẩy file ảnh huy hiệu lên IPFS Pinata
     const readableStreamForFile = fs.createReadStream(req.file.path);
@@ -29,23 +30,22 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
     });
     const ipfsImageHash = `ipfs://${pinataImageResponse.IpfsHash}`;
 
-    // Xóa file ảnh tạm trong thư mục uploads/
     fs.unlinkSync(req.file.path);
 
-    // Bước 2 (FIX LỖI 4): Tạo cấu trúc JSON Metadata chuẩn ERC-721 / Soulbound NFT
+    // Bước 2: Tạo cấu trúc JSON Metadata chuẩn ERC-721 / Soulbound NFT
     const nftMetadata = {
       name: `Chứng nhận: ${name}`,
-      description: `Huy hiệu Soulbound POAP chứng nhận sinh viên đã tham gia sự kiện "${name}" diễn ra vào ${time}.`,
+      description: `Huy hiệu Soulbound POAP chứng nhận sinh viên đã tham gia sự kiện "${name}" do ${orgName} tổ chức vào ${time}.`,
       image: ipfsImageHash,
       attributes: [
         { trait_type: 'Sự kiện', value: name },
+        { trait_type: 'Đơn vị tổ chức', value: orgName },
         { trait_type: 'Thời gian', value: time },
         { trait_type: 'Giới hạn tham dự', value: Number(capacity) },
         { trait_type: 'Chuẩn Token', value: 'ERC-5192 Soulbound' }
       ]
     };
 
-    // Đẩy JSON Metadata lên IPFS Pinata để lấy tokenURI
     const pinataJsonResponse = await pinata.pinJSONToIPFS(nftMetadata, {
       pinataMetadata: { name: `POAP_Metadata_${name}` }
     });
@@ -57,6 +57,7 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
     // Bước 4: Lưu vào MongoDB
     const newEvent = new Event({
       name,
+      organizer: orgName,
       time,
       capacity: Number(capacity),
       currentAttendees: 0,
@@ -80,6 +81,12 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
 // ==========================================
 router.get('/', async (req, res) => {
   try {
+    // Tự động đóng tất cả sự kiện đang 'open' nhưng đã đạt đủ số lượng sinh viên
+    await Event.updateMany(
+      { status: 'open', $expr: { $gte: ['$currentAttendees', '$capacity'] } },
+      { $set: { status: 'closed' } }
+    );
+
     const events = await Event.find().sort({ createdAt: -1 });
     res.json(events);
   } catch (error) {
@@ -95,6 +102,19 @@ router.get('/:id/qr-token', async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ error: 'Không tìm thấy sự kiện' });
 
+    // Nếu đã đủ số lượng sinh viên -> Khóa sự kiện và ngừng cấp mã QR
+    if (event.capacity > 0 && event.currentAttendees >= event.capacity) {
+      if (event.status !== 'closed') {
+        event.status = 'closed';
+        await event.save();
+      }
+      return res.status(400).json({ error: 'Sự kiện đã đủ số lượng sinh viên' });
+    }
+
+    if (event.status !== 'open') {
+      return res.status(400).json({ error: 'Sự kiện đã đóng điểm danh' });
+    }
+
     const step = event.refreshInterval || 30;
     const token = speakeasy.totp({
       secret: event.qrSecret,
@@ -102,14 +122,13 @@ router.get('/:id/qr-token', async (req, res) => {
       step: step
     });
 
-    // TÍNH TOÁN THỜI GIAN THỰC TẾ CÒN LẠI CỦA MÃ NÀY (Bằng Giây)
     const currentEpoch = Math.floor(Date.now() / 1000);
     const remainingSeconds = step - (currentEpoch % step);
 
     res.json({ 
       token, 
       refreshInterval: step,
-      remainingSeconds // Trả thêm dòng này về cho Frontend
+      remainingSeconds
     });
   } catch (error) {
     res.status(500).json({ error: 'Lỗi khi tạo token' });
@@ -544,8 +563,16 @@ router.post('/record-success', async (req, res) => {
     const updated = await Event.findByIdAndUpdate(
       event._id,
       { $inc: { currentAttendees: 1 } },
-      { returnDocument: 'after' }
+      { new: true }
     );
+
+    // [THÊM LOGIC]: Kiểm tra nếu số lượng sinh viên đã nhận bằng với sức chứa tối đa -> Đóng sự kiện
+    if (updated.capacity > 0 && updated.currentAttendees >= updated.capacity) {
+      await Event.findByIdAndUpdate(
+        event._id,
+        { status: 'closed' }
+      );
+    }
 
     res.status(201).json({
       success: true,
