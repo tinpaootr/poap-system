@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useWriteContract, usePublicClient } from 'wagmi';
 import axios from 'axios';
+import contractABI from '../../lib/contractABI.json';
+
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 
 interface EventDetailsProps {
   isScanned: boolean;
@@ -48,6 +51,9 @@ export default function EventDetailsPanel({
   const { address } = useAccount();
   // Ký thông điệp bằng MetaMask (không tốn gas) để chứng minh sở hữu ví
   const { signMessageAsync } = useSignMessage();
+  // Gọi Smart Contract (sinh viên tự ký và trả gas bằng ETH Sepolia)
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   // State lưu thông tin nhập liệu của sinh viên
   const [studentId, setStudentId] = useState('');
@@ -166,21 +172,42 @@ export default function EventDetailsPanel({
       onMint();
       processingStarted = true;
 
-      // TODO: Tích hợp gọi Smart Contract đúc NFT trên Sepolia ở đây
-      const mintedTxHash = '0x_mock_tx_hash_sepolia';
+      // 5. Gọi Smart Contract đúc Soulbound NFT trên Sepolia (sinh viên tự ký giao dịch)
+      if (!CONTRACT_ADDRESS) {
+        throw new Error('Thiếu NEXT_PUBLIC_CONTRACT_ADDRESS trong .env.local');
+      }
 
-      // 5. Ghi nhận lịch sử: chỉ gửi vé dùng 1 lần + txHash
+      // _eventId phải đúng bằng _id Mongo mà admin đã dùng khi gọi createEvent
+      const onChainEventId = String(response.data.eventId || response.data.event?._id);
+
+      setStatusText('Vui lòng xác nhận giao dịch nhận huy hiệu trong MetaMask...');
+      const mintedTxHash = await writeContractAsync({
+        address: CONTRACT_ADDRESS,
+        abi: contractABI,
+        functionName: 'claimBadge',
+        args: [onChainEventId, tokenURI],
+      });
+
+      setStatusText('Đang chờ Sepolia xác nhận giao dịch...');
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash: mintedTxHash });
+      if (receipt && receipt.status !== 'success') {
+        throw new Error('Giao dịch nhận huy hiệu bị từ chối trên blockchain.');
+      }
+      setStatusText('');
+
+      // 6. Ghi nhận lịch sử: chỉ gửi vé dùng 1 lần + txHash thật
       await axios.post('http://localhost:5000/api/events/record-success', {
         claimTicket,
         txHash: mintedTxHash
       });
 
-      // 6. Chuyển sang trạng thái thành công
+      // 7. Chuyển sang trạng thái thành công
       setTxHash(mintedTxHash);
       saveStudentInfo(); // khóa MSSV + họ tên theo ví này
       onMintSuccess?.(response.data.event);
     } catch (error: any) {
       let errorMsg = 'Lỗi kết nối server khi điểm danh!';
+      const chainMsg = String(error?.shortMessage || error?.message || '');
 
       if (axios.isAxiosError(error) && error.response) {
         const status = error.response.status;
@@ -197,6 +224,14 @@ export default function EventDetailsPanel({
         }
       } else if (axios.isAxiosError(error) && error.request) {
         errorMsg = 'Không kết nối được server (localhost:5000). Backend đã chạy chưa?';
+      } else if (error?.name === 'UserRejectedRequestError' || /user rejected|denied/i.test(chainMsg)) {
+        errorMsg = 'Bạn đã từ chối giao dịch trong MetaMask.';
+      } else if (/insufficient funds/i.test(chainMsg)) {
+        errorMsg = 'Ví không đủ ETH Sepolia để trả phí gas.';
+      } else if (/da nhan huy hieu/i.test(chainMsg)) {
+        errorMsg = 'Ví này đã nhận huy hiệu của sự kiện này trên blockchain rồi.';
+      } else if (chainMsg) {
+        errorMsg = chainMsg;
       }
 
       // Dùng warn thay vì error để Next.js không bật màn hình lỗi đỏ
@@ -367,7 +402,7 @@ export default function EventDetailsPanel({
             <span>{mintState === 'success' ? 'Đã nhận huy hiệu' : 'Nhận Huy Hiệu (Claim POAP / SBT)'}</span>
             <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
           </button>
-          <span className="text-center text-[11px] text-slate-500">Phí mạng (Gas fee): Được nhà trường tài trợ 100%</span>
+          <span className="text-center text-[11px] text-slate-500">Phí mạng (Gas fee): Trả bằng ETH Sepolia testnet (miễn phí khi test)</span>
         </div>
       )}
 

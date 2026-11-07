@@ -19,8 +19,9 @@ const pinata = new pinataSDK(process.env.PINATA_API_KEY, process.env.PINATA_SECR
 // ==========================================
 router.post('/', upload.single('badgeImage'), async (req, res) => {
   try {
-    const { name, time, capacity, refreshInterval } = req.body;
-    const interval = parseInt(refreshInterval) || 30; // Mặc định 30s
+    const { name, organizer, time, capacity, refreshInterval } = req.body;
+    const interval = parseInt(refreshInterval) || 30;
+    const orgName = organizer || 'Khoa CNTT';
 
     // Bước 1: Đẩy file ảnh huy hiệu lên IPFS Pinata
     const readableStreamForFile = fs.createReadStream(req.file.path);
@@ -29,23 +30,22 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
     });
     const ipfsImageHash = `ipfs://${pinataImageResponse.IpfsHash}`;
 
-    // Xóa file ảnh tạm trong thư mục uploads/
     fs.unlinkSync(req.file.path);
 
-    // Bước 2 (FIX LỖI 4): Tạo cấu trúc JSON Metadata chuẩn ERC-721 / Soulbound NFT
+    // Bước 2: Tạo cấu trúc JSON Metadata chuẩn ERC-721 / Soulbound NFT
     const nftMetadata = {
       name: `Chứng nhận: ${name}`,
-      description: `Huy hiệu Soulbound POAP chứng nhận sinh viên đã tham gia sự kiện "${name}" diễn ra vào ${time}.`,
+      description: `Huy hiệu Soulbound POAP chứng nhận sinh viên đã tham gia sự kiện "${name}" do ${orgName} tổ chức vào ${time}.`,
       image: ipfsImageHash,
       attributes: [
         { trait_type: 'Sự kiện', value: name },
+        { trait_type: 'Đơn vị tổ chức', value: orgName },
         { trait_type: 'Thời gian', value: time },
         { trait_type: 'Giới hạn tham dự', value: Number(capacity) },
         { trait_type: 'Chuẩn Token', value: 'ERC-5192 Soulbound' }
       ]
     };
 
-    // Đẩy JSON Metadata lên IPFS Pinata để lấy tokenURI
     const pinataJsonResponse = await pinata.pinJSONToIPFS(nftMetadata, {
       pinataMetadata: { name: `POAP_Metadata_${name}` }
     });
@@ -57,13 +57,15 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
     // Bước 4: Lưu vào MongoDB
     const newEvent = new Event({
       name,
+      organizer: orgName,
       time,
       capacity: Number(capacity),
       currentAttendees: 0,
       ipfsImageHash,
       ipfsMetadataHash,
       qrSecret,
-      refreshInterval: interval
+      refreshInterval: interval,
+      contractAddress: process.env.CONTRACT_ADDRESS
     });
 
     await newEvent.save();
@@ -79,6 +81,12 @@ router.post('/', upload.single('badgeImage'), async (req, res) => {
 // ==========================================
 router.get('/', async (req, res) => {
   try {
+    // Tự động đóng tất cả sự kiện đang 'open' nhưng đã đạt đủ số lượng sinh viên
+    await Event.updateMany(
+      { status: 'open', $expr: { $gte: ['$currentAttendees', '$capacity'] } },
+      { $set: { status: 'closed' } }
+    );
+
     const events = await Event.find().sort({ createdAt: -1 });
     res.json(events);
   } catch (error) {
@@ -94,6 +102,19 @@ router.get('/:id/qr-token', async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ error: 'Không tìm thấy sự kiện' });
 
+    // Nếu đã đủ số lượng sinh viên -> Khóa sự kiện và ngừng cấp mã QR
+    if (event.capacity > 0 && event.currentAttendees >= event.capacity) {
+      if (event.status !== 'closed') {
+        event.status = 'closed';
+        await event.save();
+      }
+      return res.status(400).json({ error: 'Sự kiện đã đủ số lượng sinh viên' });
+    }
+
+    if (event.status !== 'open') {
+      return res.status(400).json({ error: 'Sự kiện đã đóng điểm danh' });
+    }
+
     const step = event.refreshInterval || 30;
     const token = speakeasy.totp({
       secret: event.qrSecret,
@@ -101,14 +122,13 @@ router.get('/:id/qr-token', async (req, res) => {
       step: step
     });
 
-    // TÍNH TOÁN THỜI GIAN THỰC TẾ CÒN LẠI CỦA MÃ NÀY (Bằng Giây)
     const currentEpoch = Math.floor(Date.now() / 1000);
     const remainingSeconds = step - (currentEpoch % step);
 
     res.json({ 
       token, 
       refreshInterval: step,
-      remainingSeconds // Trả thêm dòng này về cho Frontend
+      remainingSeconds
     });
   } catch (error) {
     res.status(500).json({ error: 'Lỗi khi tạo token' });
@@ -491,6 +511,51 @@ router.post('/student-checkin', async (req, res) => {
   }
 });
 
+// ---------- Kiểm tra giao dịch claim có thật trên Sepolia ----------
+const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
+
+// Hỗ trợ cả ethers v6 (JsonRpcProvider) và v5 (providers.JsonRpcProvider)
+const makeProvider = () =>
+  ethers.JsonRpcProvider
+    ? new ethers.JsonRpcProvider(SEPOLIA_RPC_URL)
+    : new ethers.providers.JsonRpcProvider(SEPOLIA_RPC_URL);
+
+/**
+ * Đọc giao dịch từ Sepolia và kiểm tra: đã thành công, gọi đúng contract của nhóm,
+ * và do đúng ví sinh viên gửi. Trả về null nếu hợp lệ, hoặc { status, code, error }.
+ * Ném lỗi nếu không kết nối được RPC (caller xử lý riêng).
+ */
+async function verifyClaimTx(txHash, walletAddress) {
+  const contractAddress = String(process.env.CONTRACT_ADDRESS || '').toLowerCase();
+  if (!contractAddress) {
+    console.warn('[record-success] Thiếu CONTRACT_ADDRESS trong .env -> bỏ qua kiểm tra on-chain');
+    return null;
+  }
+
+  const provider = makeProvider();
+
+  // RPC công khai có thể trễ vài giây so với MetaMask -> thử lại vài lần
+  let receipt = null;
+  for (let i = 0; i < 5 && !receipt; i++) {
+    receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  if (!receipt) {
+    return { status: 400, code: 'TX_NOT_FOUND', error: 'Không tìm thấy giao dịch này trên Sepolia.' };
+  }
+  if (receipt.status !== 1) {
+    return { status: 400, code: 'TX_FAILED', error: 'Giao dịch trên Sepolia đã thất bại (reverted).' };
+  }
+  if (String(receipt.to || '').toLowerCase() !== contractAddress) {
+    return { status: 400, code: 'TX_WRONG_CONTRACT', error: 'Giao dịch không gọi đúng smart contract của hệ thống.' };
+  }
+  if (String(receipt.from || '').toLowerCase() !== walletAddress) {
+    return { status: 400, code: 'TX_WRONG_SENDER', error: 'Giao dịch không do ví điểm danh gửi.' };
+  }
+  return null;
+}
+
 /**
  * @route   POST /api/events/record-success
  * @body    { claimTicket, txHash }
@@ -513,9 +578,30 @@ router.post('/record-success', async (req, res) => {
     if (!txHash || typeof txHash !== 'string' || txHash.length > 100) {
       return res.status(400).json({ code: 'INVALID_TX', error: 'Thiếu mã giao dịch (txHash).' });
     }
-    // TODO: khi đã mint thật trên Sepolia, bật kiểm tra: /^0x[a-fA-F0-9]{64}$/.test(txHash)
+    if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+      return res.status(400).json({ code: 'INVALID_TX', error: 'txHash không hợp lệ (cần giao dịch thật trên Sepolia).' });
+    }
 
     const { eventId, walletAddress, studentId, fullName } = ticket;
+
+    // Mỗi giao dịch chỉ được dùng cho 1 lượt điểm danh
+    const txUsed = await Attendance.findOne({ txHash });
+    if (txUsed) {
+      return res.status(409).json({ code: 'TX_ALREADY_USED', error: 'Giao dịch này đã được ghi nhận trước đó.' });
+    }
+
+    // Xác minh giao dịch có thật trên Sepolia (đúng contract, đúng ví, thành công)
+    let txError = null;
+    try {
+      txError = await verifyClaimTx(txHash, walletAddress);
+    } catch (rpcErr) {
+      console.error('[record-success] Lỗi RPC Sepolia:', rpcErr);
+      tickets.set(claimTicket, ticket); // trả lại vé để client thử lại, tránh mất dữ liệu
+      return res.status(502).json({ code: 'RPC_ERROR', error: 'Chưa kiểm tra được giao dịch trên Sepolia, vui lòng thử lại.' });
+    }
+    if (txError) {
+      return res.status(txError.status).json({ code: txError.code, error: txError.error });
+    }
 
     const event = await Event.findById(eventId);
     if (!event) {
@@ -543,8 +629,16 @@ router.post('/record-success', async (req, res) => {
     const updated = await Event.findByIdAndUpdate(
       event._id,
       { $inc: { currentAttendees: 1 } },
-      { returnDocument: 'after' }
+      { new: true }
     );
+
+    // [THÊM LOGIC]: Kiểm tra nếu số lượng sinh viên đã nhận bằng với sức chứa tối đa -> Đóng sự kiện
+    if (updated.capacity > 0 && updated.currentAttendees >= updated.capacity) {
+      await Event.findByIdAndUpdate(
+        event._id,
+        { status: 'closed' }
+      );
+    }
 
     res.status(201).json({
       success: true,
@@ -554,6 +648,21 @@ router.post('/record-success', async (req, res) => {
   } catch (err) {
     console.error('Error recording success:', err);
     res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi ghi nhận lịch sử điểm danh.' });
+  }
+});
+
+// ==========================================
+// API LẤY DANH SÁCH SINH VIÊN ĐÃ ĐIỂM DANH THEO SỰ KIỆN (CHO ADMIN)
+// ==========================================
+router.get('/:id/attendees', async (req, res) => {
+  try {
+    const attendees = await Attendance.find({ eventId: req.params.id })
+      .sort({ claimedAt: -1 })
+      .lean();
+    res.json({ total: attendees.length, attendees });
+  } catch (error) {
+    console.error('Lỗi lấy danh sách điểm danh:', error);
+    res.status(500).json({ error: 'Lỗi server khi tải danh sách sinh viên' });
   }
 });
 
