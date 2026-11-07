@@ -11,23 +11,20 @@ interface EventDetailsProps {
   isScanned: boolean;
   mintState: 'idle' | 'processing' | 'success';
   onMint: () => void;
-  onMintSuccess?: (data?: any) => void; // gọi khi ghi nhận thành công
-  onMintError?: () => void;             // gọi khi có lỗi -> quay về idle
-  // Dữ liệu thật từ component cha / quá trình quét QR
+  onMintSuccess?: (data?: any) => void;
+  onMintError?: () => void;
   scannedEventId?: string;
   scannedTokenOrCode?: string;
   eventData?: any;
-  loadingEvent?: boolean; // đang hỏi backend thông tin sự kiện sau khi quét
-  scanError?: string;     // mã sai / hết hạn / sự kiện đóng
+  loadingEvent?: boolean;
+  scanError?: string;
 }
 
 const IPFS_GATEWAY = 'https://gateway.pinata.cloud/ipfs';
 
-// "ipfs://Qm..." -> link ảnh xem được trên trình duyệt
 const ipfsToHttp = (uri?: string) =>
   uri ? `${IPFS_GATEWAY}/${String(uri).replace(/^ipfs:\/\//, '')}` : '';
 
-// Thời gian admin nhập (VD "2026-11-05T14:30") -> "14:30 05/11/2026"; không parse được thì giữ nguyên
 const formatEventTime = (raw?: string) => {
   if (!raw) return 'Chưa cập nhật';
   const d = new Date(raw);
@@ -47,30 +44,31 @@ export default function EventDetailsPanel({
   loadingEvent = false,
   scanError = ''
 }: EventDetailsProps) {
-  // Lấy địa chỉ ví MetaMask thật của sinh viên bằng wagmi
   const { address } = useAccount();
-  // Ký thông điệp bằng MetaMask (không tốn gas) để chứng minh sở hữu ví
   const { signMessageAsync } = useSignMessage();
-  // Gọi Smart Contract (sinh viên tự ký và trả gas bằng ETH Sepolia)
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
 
   // State lưu thông tin nhập liệu của sinh viên
   const [studentId, setStudentId] = useState('');
   const [fullName, setFullName] = useState('');
+  const [className, setClassName] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [txHash, setTxHash] = useState('');
-  const [statusText, setStatusText] = useState(''); // "Vui lòng ký trong MetaMask...", ...
+  const [statusText, setStatusText] = useState('');
 
-  // Ví đã gắn với 1 sinh viên (lấy từ backend) -> khóa ô MSSV + họ tên
+  // Ví đã gắn với 1 sinh viên -> khóa ô MSSV, Họ tên và Lớp
   const [isLocked, setIsLocked] = useState(false);
+  const [isClassLocked, setIsClassLocked] = useState(false);
   const [checkingWallet, setCheckingWallet] = useState(false);
 
-  // Mỗi khi đổi ví: hỏi backend xem ví này đã điểm danh với MSSV nào chưa
+  // Mỗi khi đổi ví: hỏi backend xem ví này đã điểm danh với MSSV / Lớp nào chưa
   useEffect(() => {
     setIsLocked(false);
+    setIsClassLocked(false);
     setStudentId('');
     setFullName('');
+    setClassName('');
     if (!address) return;
 
     let cancelled = false;
@@ -79,15 +77,19 @@ export default function EventDetailsPanel({
       try {
         const res = await axios.get(`http://localhost:5000/api/collection/${address}`);
         const badges: any[] = res.data?.badges || [];
-        // Lấy lượt điểm danh gần nhất có đủ MSSV + họ tên
         const bound = badges.find((b) => b.studentId && b.fullName);
         if (!cancelled && bound) {
           setStudentId(String(bound.studentId));
           setFullName(String(bound.fullName));
           setIsLocked(true);
+
+          const withClass = badges.find((b) => b.className);
+          if (withClass?.className) {
+            setClassName(String(withClass.className));
+            setIsClassLocked(true);
+          }
         }
       } catch (e) {
-        // Backend lỗi / chưa chạy -> vẫn cho nhập tay, backend sẽ chặn nếu sai
         console.warn('[checkin] không lấy được thông tin ví:', e);
       } finally {
         if (!cancelled) setCheckingWallet(false);
@@ -100,11 +102,12 @@ export default function EventDetailsPanel({
     };
   }, [address]);
 
-  // Điểm danh thành công lần đầu -> khóa luôn theo thông tin vừa nhập
   const saveStudentInfo = () => {
     setStudentId((v) => v.trim());
     setFullName((v) => v.trim());
+    setClassName((v) => v.trim().toUpperCase());
     setIsLocked(true);
+    setIsClassLocked(true);
   };
 
   // Hàm xử lý khi bấm nút "Nhận Huy Hiệu"
@@ -116,8 +119,8 @@ export default function EventDetailsPanel({
       return;
     }
 
-    if (!studentId.trim() || !fullName.trim()) {
-      setErrorMessage('Vui lòng nhập đầy đủ MSSV và Họ tên!');
+    if (!studentId.trim() || !fullName.trim() || !className.trim()) {
+      setErrorMessage('Vui lòng nhập đầy đủ MSSV, Lớp và Họ tên!');
       return;
     }
     if (!/^\d{6,12}$/.test(studentId.trim())) {
@@ -125,7 +128,6 @@ export default function EventDetailsPanel({
       return;
     }
 
-    // Mã lấy từ camera / tải ảnh / nhập mã (ScannerPanel -> page -> đây)
     const tokenOrCodeToVerify = scannedTokenOrCode || '';
     if (!tokenOrCodeToVerify) {
       setErrorMessage('Vui lòng quét hoặc nhập mã check-in trước!');
@@ -140,7 +142,8 @@ export default function EventDetailsPanel({
       const challengeRes = await axios.post('http://localhost:5000/api/events/student-challenge', {
         walletAddress: address,
         studentId: studentId.trim(),
-        fullName: fullName.trim()
+        fullName: fullName.trim(),
+        className: className.trim().toUpperCase()
       });
 
       // 2. Ký bằng MetaMask -> chứng minh đang giữ private key của ví
@@ -155,10 +158,10 @@ export default function EventDetailsPanel({
         return;
       }
 
-      // 3. Gửi mã QR + chữ ký lên backend (MSSV/họ tên backend lấy từ thông điệp đã ký)
+      // 3. Gửi mã QR + chữ ký lên backend
       setStatusText('Đang xác thực điểm danh...');
       const response = await axios.post('http://localhost:5000/api/events/student-checkin', {
-        eventId: scannedEventId || null, // null -> Backend tự dò sự kiện theo token
+        eventId: scannedEventId || null,
         qrToken: tokenOrCodeToVerify,
         walletAddress: address,
         signature
@@ -172,12 +175,11 @@ export default function EventDetailsPanel({
       onMint();
       processingStarted = true;
 
-      // 5. Gọi Smart Contract đúc Soulbound NFT trên Sepolia (sinh viên tự ký giao dịch)
+      // 5. Gọi Smart Contract đúc Soulbound NFT trên Sepolia
       if (!CONTRACT_ADDRESS) {
         throw new Error('Thiếu NEXT_PUBLIC_CONTRACT_ADDRESS trong .env.local');
       }
 
-      // _eventId phải đúng bằng _id Mongo mà admin đã dùng khi gọi createEvent
       const onChainEventId = String(response.data.eventId || response.data.event?._id);
 
       setStatusText('Vui lòng xác nhận giao dịch nhận huy hiệu trong MetaMask...');
@@ -203,7 +205,7 @@ export default function EventDetailsPanel({
 
       // 7. Chuyển sang trạng thái thành công
       setTxHash(mintedTxHash);
-      saveStudentInfo(); // khóa MSSV + họ tên theo ví này
+      saveStudentInfo();
       onMintSuccess?.(response.data.event);
     } catch (error: any) {
       let errorMsg = 'Lỗi kết nối server khi điểm danh!';
@@ -234,10 +236,9 @@ export default function EventDetailsPanel({
         errorMsg = chainMsg;
       }
 
-      // Dùng warn thay vì error để Next.js không bật màn hình lỗi đỏ
       console.warn('Lỗi khi claim:', error);
       setStatusText('');
-      if (processingStarted) onMintError?.(); // tắt hiệu ứng "Đang ký giao dịch"
+      if (processingStarted) onMintError?.();
       setErrorMessage(errorMsg);
     }
   };
@@ -339,33 +340,49 @@ export default function EventDetailsPanel({
                 </span>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] text-slate-500">Mã số sinh viên (MSSV)</label>
                 <input
-                  className={`px-4 py-3 rounded-lg bg-[#0b1326] border text-white text-xs focus:outline-none ${isLocked ? 'border-emerald-500/30 text-slate-300 cursor-not-allowed' : 'border-slate-800'}`}
+                  className={`px-4 py-3 rounded-lg bg-[#0b1326] border text-white text-xs focus:outline-none ${isLocked ? 'border-emerald-500/30 text-slate-300 cursor-not-allowed' : 'border-slate-800 focus:border-indigo-500'}`}
                   type="text"
                   inputMode="numeric"
-                  placeholder={checkingWallet ? 'Đang kiểm tra ví...' : 'VD: 2311073'}
+                  placeholder={checkingWallet ? 'Đang kiểm tra...' : 'VD: 2311022'}
                   value={studentId}
                   onChange={(e) => setStudentId(e.target.value)}
                   readOnly={isLocked}
                   disabled={mintState !== 'idle' || checkingWallet}
                 />
               </div>
+
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] text-slate-500">Họ và Tên</label>
+                <label className="text-[11px] text-slate-500">Lớp</label>
                 <input
-                  className={`px-4 py-3 rounded-lg bg-[#0b1326] border text-white text-xs focus:outline-none ${isLocked ? 'border-emerald-500/30 text-slate-300 cursor-not-allowed' : 'border-slate-800'}`}
+                  className={`px-4 py-3 rounded-lg bg-[#0b1326] border text-white text-xs uppercase focus:outline-none ${isClassLocked ? 'border-emerald-500/30 text-slate-300 cursor-not-allowed' : 'border-slate-800 focus:border-indigo-500'}`}
                   type="text"
-                  placeholder={checkingWallet ? 'Đang kiểm tra ví...' : 'VD: Nguyễn Văn A'}
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  readOnly={isLocked}
+                  placeholder={checkingWallet ? 'Đang kiểm tra...' : 'VD: DH23TIN01'}
+                  value={className}
+                  onChange={(e) => setClassName(e.target.value)}
+                  readOnly={isClassLocked}
                   disabled={mintState !== 'idle' || checkingWallet}
                 />
               </div>
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] text-slate-500">Họ và Tên</label>
+              <input
+                className={`px-4 py-3 rounded-lg bg-[#0b1326] border text-white text-xs focus:outline-none ${isLocked ? 'border-emerald-500/30 text-slate-300 cursor-not-allowed' : 'border-slate-800 focus:border-indigo-500'}`}
+                type="text"
+                placeholder={checkingWallet ? 'Đang kiểm tra ví...' : 'VD: Nguyễn Thái Tuyền'}
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                readOnly={isLocked}
+                disabled={mintState !== 'idle' || checkingWallet}
+              />
+            </div>
+
             {isLocked ? (
               <p className="text-[11px] text-emerald-400 flex items-center gap-1">
                 <span className="material-symbols-outlined text-[14px]">verified_user</span>
@@ -375,7 +392,7 @@ export default function EventDetailsPanel({
               address && !checkingWallet && (
                 <p className="text-[11px] text-amber-400/80 flex items-center gap-1">
                   <span className="material-symbols-outlined text-[14px]">info</span>
-                  Lần điểm danh đầu tiên: MSSV và họ tên sẽ gắn cố định với ví này.
+                  Lần điểm danh đầu tiên: MSSV, Lớp và Họ tên sẽ gắn cố định với ví này.
                 </p>
               )
             )}

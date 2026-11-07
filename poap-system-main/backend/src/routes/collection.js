@@ -1,14 +1,5 @@
 // backend/src/routes/collection.js
 // Người 3 - Bộ sưu tập huy hiệu cá nhân (/collection)
-//
-// Endpoints (mount tại /api/collection):
-//   GET /api/collection/:wallet                    -> Danh sách huy hiệu của ví
-//   GET /api/collection/:wallet/:eventId           -> Chi tiết 1 huy hiệu
-//   GET /api/collection/verify/:eventId/:wallet    -> Xác minh công khai (Nhà trường / Nhà tuyển dụng)
-//
-// [SỬA] Dữ liệu điểm danh được route /api/events/record-success lưu vào collection
-//       Attendance (models/Attendance.js), KHÔNG lưu vào mảng Event.attendees.
-//       => Bộ sưu tập phải đọc từ Attendance rồi ghép với Event.
 
 const express = require('express');
 const Event = require('../models/Event');
@@ -17,7 +8,7 @@ const Attendance = require('../models/Attendance');
 const router = express.Router();
 
 // ====== CẤU HÌNH (đặt trong backend/.env) ======
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || ''; // điền sau khi deploy
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '';
 const ETHERSCAN_BASE = process.env.ETHERSCAN_BASE || 'https://sepolia.etherscan.io';
 const IPFS_GATEWAY = (process.env.PINATA_GATEWAY || 'https://gateway.pinata.cloud/ipfs').replace(/\/$/, '');
 
@@ -27,7 +18,6 @@ const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
 
 const isValidWallet = (w) => typeof w === 'string' && WALLET_REGEX.test(w);
 
-// events.js lưu hash dạng "ipfs://Qm..." -> bỏ tiền tố để ghép với gateway
 const stripIpfs = (hash) => (hash ? String(hash).replace(/^ipfs:\/\//, '') : '');
 
 const ipfsUrl = (hash) => (hash ? `${IPFS_GATEWAY}/${stripIpfs(hash)}` : null);
@@ -39,7 +29,6 @@ const etherscanTx = (txHash) => (txHash ? `${ETHERSCAN_BASE}/tx/${txHash}` : nul
 const etherscanContract = () =>
   CONTRACT_ADDRESS ? `${ETHERSCAN_BASE}/address/${CONTRACT_ADDRESS}` : null;
 
-// Thời điểm nhận: ưu tiên claimedAt / createdAt, nếu schema không có timestamps thì lấy từ _id
 const getClaimedAt = (att) => {
   if (att.claimedAt) return att.claimedAt;
   if (att.createdAt) return att.createdAt;
@@ -50,10 +39,6 @@ const getClaimedAt = (att) => {
   }
 };
 
-/**
- * Chuyển (event + bản ghi điểm danh) thành object huy hiệu gửi cho Frontend.
- * Dùng fallback tên trường để tránh lỗi nếu schema Event.js đặt tên hơi khác.
- */
 function toBadge(ev, att) {
   return {
     eventId: String(ev._id),
@@ -71,6 +56,7 @@ function toBadge(ev, att) {
     walletAddress: att.walletAddress,
     studentId: att.studentId,
     fullName: att.fullName,
+    className: att.className || '',
     claimedAt: getClaimedAt(att),
 
     // Blockchain
@@ -81,11 +67,6 @@ function toBadge(ev, att) {
   };
 }
 
-/**
- * Tìm các lượt điểm danh của ví trong collection Attendance, ghép với Event.
- * record-success luôn lưu ví dạng chữ thường -> so khớp bằng toLowerCase().
- * Trả về mảng { ev, att }.
- */
 async function findAttendanceByWallet(wallet, eventId = null) {
   const query = { walletAddress: wallet.toLowerCase() };
   if (eventId) query.eventId = eventId;
@@ -93,7 +74,6 @@ async function findAttendanceByWallet(wallet, eventId = null) {
   const attendances = await Attendance.find(query).lean();
   if (attendances.length === 0) return [];
 
-  // Lấy thông tin các sự kiện liên quan (không bao giờ trả qrSecret ra ngoài)
   const eventIds = [...new Set(attendances.map((a) => String(a.eventId)))];
   const events = await Event.find({ _id: { $in: eventIds } }).select('-qrSecret').lean();
   const eventMap = new Map(events.map((ev) => [String(ev._id), ev]));
@@ -101,15 +81,12 @@ async function findAttendanceByWallet(wallet, eventId = null) {
   const results = [];
   for (const att of attendances) {
     const ev = eventMap.get(String(att.eventId));
-    if (ev) results.push({ ev, att }); // bỏ qua bản ghi mà sự kiện đã bị xóa
+    if (ev) results.push({ ev, att });
   }
   return results;
 }
 
 // ====== 1. XÁC MINH CÔNG KHAI ======
-// GET /api/collection/verify/:eventId/:wallet
-// Dành cho Nhà trường / Nhà tuyển dụng đối chiếu nhanh.
-// (Khai báo TRƯỚC các route /:wallet để không bị nuốt)
 router.get('/verify/:eventId/:wallet', async (req, res) => {
   try {
     const { eventId, wallet } = req.params;
@@ -134,7 +111,7 @@ router.get('/verify/:eventId/:wallet', async (req, res) => {
     const hasTx = Boolean(att.txHash);
 
     return res.json({
-      valid: hasTx, // chỉ hợp lệ khi đã có giao dịch mint thành công
+      valid: hasTx,
       badge: toBadge(ev, att),
       note: hasTx
         ? 'Đối chiếu txHash trên Sepolia Etherscan để xác nhận dữ liệu gốc trên Blockchain.'
@@ -147,7 +124,6 @@ router.get('/verify/:eventId/:wallet', async (req, res) => {
 });
 
 // ====== 2. DANH SÁCH HUY HIỆU CỦA VÍ ======
-// GET /api/collection/:wallet?sort=newest|oldest&search=...
 router.get('/:wallet', async (req, res) => {
   try {
     const { wallet } = req.params;
@@ -159,10 +135,8 @@ router.get('/:wallet', async (req, res) => {
 
     const found = await findAttendanceByWallet(wallet);
 
-    // Chỉ hiển thị huy hiệu đã mint thành công (có txHash)
     let badges = found.filter(({ att }) => att.txHash).map(({ ev, att }) => toBadge(ev, att));
 
-    // Tìm kiếm theo tên sự kiện / đơn vị tổ chức
     const keyword = String(search).trim().toLowerCase();
     if (keyword) {
       badges = badges.filter(
@@ -172,7 +146,6 @@ router.get('/:wallet', async (req, res) => {
       );
     }
 
-    // Sắp xếp theo thời điểm nhận
     badges.sort((a, b) => {
       const ta = a.claimedAt ? new Date(a.claimedAt).getTime() : 0;
       const tb = b.claimedAt ? new Date(b.claimedAt).getTime() : 0;
@@ -191,7 +164,6 @@ router.get('/:wallet', async (req, res) => {
 });
 
 // ====== 3. CHI TIẾT 1 HUY HIỆU ======
-// GET /api/collection/:wallet/:eventId
 router.get('/:wallet/:eventId', async (req, res) => {
   try {
     const { wallet, eventId } = req.params;

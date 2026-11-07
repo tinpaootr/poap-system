@@ -24,13 +24,15 @@ Hệ thống sử dụng cơ chế **Web3 Wallet Authentication** (Đăng nhập
 ---
 
 ### Luồng 1: Trước & Trong sự kiện — Dành cho Ban Tổ Chức (Tuyen phụ trách)
-1. **Tạo sự kiện:** Admin truy cập `/admin`, nhập thông tin hội thảo (Tên sự kiện, Đơn vị tổ chức, Thời gian, Số lượng giới hạn) và tải lên hình ảnh Huy hiệu (Badge).
-2. **Lưu trữ & Khởi tạo:**
+1. **Tạo sự kiện:** Admin truy cập `/admin`, nhập thông tin hội thảo (Tên sự kiện, Đơn vị tổ chức, Thời gian, Số lượng giới hạn, Chu kỳ đổi QR) và tải lên hình ảnh Huy hiệu (Badge).
+2. **Lưu trữ & Khởi tạo On-chain:**
    - Hình ảnh huy hiệu và thông tin (Metadata) được đẩy lên mạng lưu trữ phi tập trung **IPFS (Pinata)** để lấy đường dẫn `tokenURI`.
    - Dữ liệu sự kiện và khóa bí mật sinh QR động (`speakeasy`) được lưu trữ trên **MongoDB Atlas**.
-3. **Chiếu mã QR điểm danh động:**
+   - Cửa sổ MetaMask bật lên để Admin ký giao dịch `createEvent()` ghi nhận sự kiện lên Smart Contract trên mạng **Sepolia**.
+3. **Chiếu mã QR điểm danh động & Quản lý danh sách:**
    - Tại hội trường sự kiện, Admin mở màn hình trình chiếu QR của sự kiện đó.
-   - Mã QR kèm mã code dự phòng sẽ **tự động làm mới (refresh) sau mỗi 20 giây** nhằm chống việc sinh viên chụp ảnh mã QR gửi cho người ở nhà quét hộ.
+   - Mã QR kèm mã code dự phòng sẽ **tự động làm mới (refresh) theo chu kỳ (30s/45s/60s)** nhằm chống việc sinh viên chụp ảnh mã QR gửi cho người ở nhà quét hộ.
+   - Khi số lượng sinh viên điểm danh đạt tối đa (`capacity`), cổng QR tự động khóa. Admin có thể xem trực tiếp danh sách sinh viên đã điểm danh và xuất báo cáo ra file **CSV (Excel)**.
 
 ---
 
@@ -38,19 +40,19 @@ Hệ thống sử dụng cơ chế **Web3 Wallet Authentication** (Đăng nhập
 1. **Quét mã QR:** Sinh viên có mặt tại hội thảo truy cập `/checkin` (hoặc dùng camera điện thoại), quét mã QR trên màn chiếu của Ban Tổ Chức (hoặc tải ảnh QR / nhập mã code sự kiện).
 2. **Kiểm tra tính hợp lệ:**
    - Gửi token lấy từ mã QR lên Backend để thuật toán kiểm tra tính hợp lệ (Token có hết hạn chưa).
-   - Kiểm tra ví MetaMask của sinh viên đã nhận huy hiệu của sự kiện này trước đó chưa (mỗi ví chỉ được nhận 1 lần/sự kiện).
+   - Kiểm tra ví MetaMask của sinh viên đã nhận huy hiệu của sự kiện này trước đó chưa (mỗi ví và mỗi MSSV chỉ được nhận 1 lần/sự kiện).
 3. **Điền thông tin & Nhận NFT (Claim POAP):**
-   - Sinh viên nhập **MSSV + Họ tên** (hoặc hệ thống tự điền nếu đã lưu từ lần trước).
-   - Bấm nút **"Nhận Huy Hiệu NFT (Claim Badge)"** -> Cửa sổ **MetaMask** bật lên yêu cầu xác nhận giao dịch trên mạng **Sepolia**.
-   - Smart Contract thực thi hàm `claimBadge()`, đúc (mint) 1 **Soulbound NFT** gửi thẳng vào ví của sinh viên.
+   - Sinh viên nhập **MSSV + Lớp + Họ tên** (hoặc hệ thống tự động điền và khóa cố định nếu ví đã liên kết từ lần điểm danh trước).
+   - Bấm nút **"Nhận Huy Hiệu (Claim POAP / SBT)"** -> Ký xác thực thông điệp định danh (không tốn gas) -> Cửa sổ **MetaMask** bật lên yêu cầu xác nhận giao dịch `claimBadge()` trên mạng **Sepolia**.
+   - Smart Contract đúc (mint) 1 **Soulbound NFT (ERC-5192)** gửi thẳng vào ví của sinh viên và Backend đối chiếu receipt on-chain trước khi lưu lịch sử.
 
 ---
 
 ### Luồng 3: Sau sự kiện — Bộ Sưu Tập & Xác minh Chứng nhận (Người 3 phụ trách)
 1. **Xem hồ sơ ngoại khóa:** Sinh viên truy cập `/collection`, hệ thống tự động truy vấn toàn bộ các **Soulbound Badge** đang nằm trong ví MetaMask đang kết nối (`0x4da3...5656`) để hiển thị thành bộ sưu tập cá nhân.
 2. **Kiểm tra minh chứng chống giả mạo (Dành cho Nhà trường / Nhà tuyển dụng):**
-   - Khi bấm vào một huy hiệu bất kỳ, màn hình hiển thị chi tiết thông tin và Địa chỉ Smart Contract.
-   - Người kiểm tra chỉ cần bấm nút **"Xem trên Sepolia Etherscan"** để đối chiếu dữ liệu gốc trên Blockchain — đảm bảo chứng nhận là thật 100%, không thể chỉnh sửa bằng Photoshop hay làm giả.
+   - Khi bấm vào một huy hiệu bất kỳ, màn hình hiển thị chi tiết thông tin, đối chiếu trực tiếp `ownerOf`, `balanceOf`, `locked` trên Blockchain và Địa chỉ Smart Contract.
+   - Người kiểm tra chỉ cần bấm nút **"Xem Giao Dịch Trên Sepolia Etherscan"** hoặc **"Xem Token"** để đối chiếu dữ liệu gốc trên Blockchain — đảm bảo chứng nhận là thật 100%, không thể chỉnh sửa bằng Photoshop hay làm giả.
 
 ---
 
@@ -65,28 +67,31 @@ club-poap-system/
 │       ├── app/                  
 │       │   ├── page.tsx          
 │       │   ├── layout.tsx        # Layout chung + Navbar + MetaMask Provider
-│       │   ├── admin/            # [Tuyen] Trang quản lý & xuất QR của CLB (Hoàn thiện)
-│       │   ├── checkin/          # [Người 2] Trang quét QR & nhận NFT của Sinh viên 
-│       │   └── collection/       # [Người 3] Trang bộ sưu tập huy hiệu cá nhân
+│       │   ├── admin/            # [Tuyen] Trang quản lý, xuất QR & danh sách SV của CLB
+│       │   ├── checkin/          # [Trâm] Trang quét QR & nhận NFT của Sinh viên 
+│       │   └── collection/       # [Kiệt] Trang bộ sưu tập huy hiệu cá nhân
 │       ├── components/
 │       │   ├── share/            
-│       │   ├── admin/            # [Tuyen] Các Component: CreateEventForm, EventTable, LiveQrStage
-│       │   ├── checkin/          
-│       │   └── collection/       
-│       └── types/                
+│       │   ├── admin/            # [Tuyen] CreateEventForm, EventTable, LiveQrStage
+│       │   ├── checkin/          # [Trâm] ScannerPanel, EventDetailsPanel
+│       │   └── collection/       # [Kiệt] StudentProfileHeader, FilterToolbar, BadgeCard, CredentialModal
+│       ├── hooks/                # useCollection, useOnchainVerify
+│       └── lib/                  # contractABI.json, collectionApi, collectionMapper
 │
 ├── backend/                      # Giai đoạn 2: API, Sinh QR động, Lưu trữ MongoDB, IPFS
 │   ├── src/
 │   │   ├── models/
-│   │   │   └── Event.js          # Schema Database lưu thông tin sự kiện
+│   │   │   ├── Event.js          # Schema Database lưu thông tin sự kiện
+│   │   │   └── Attendance.js     # Schema Database lưu lịch sử điểm danh (Ví, MSSV, Họ tên, Lớp, txHash)
 │   │   ├── routes/
-│   │   │   └── events.js         # API (POST Tạo sự kiện, GET Lấy DS, POST Xác thực QR)
+│   │   │   ├── events.js         # API Sự kiện, QR TOTP, Điểm danh & Danh sách SV
+│   │   │   └── collection.js     # API Bộ sưu tập & Xác minh công khai
 │   │   └── index.js              # Khởi tạo Server Express
 │   ├── uploads/                  # Bộ đệm lưu ảnh tạm trước khi đẩy lên IPFS Pinata
-│   └── .env                      # Chứa chuỗi kết nối MONGODB_URI và PINATA_KEYS
+│   └── .env                      # Chứa chuỗi kết nối MONGODB_URI, PINATA_KEYS, CONTRACT_ADDRESS
 │
-├── blockchain/                   # Giai đoạn 3: Hardhat/Foundry, Smart Contract (Soulbound NFT)
-└── README.md                     # Tài liệu hướng dẫn & phân công dự án
+├── blockchain/                   # Giai đoạn 3: Hardhat, Smart Contract (ClubPOAP.sol - ERC-5192)
+└── PROJECT_PLAN.md               # Tài liệu hướng dẫn & nhật ký tiến độ dự án
 ```
 
 ---
@@ -107,7 +112,7 @@ club-poap-system/
 ====================
 
 **A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
-- [x] **Xây dựng Backend Backend hoàn chỉnh:** Thiết lập thành công Express Server tại cổng 5000. Kết nối thành công MongoDB Atlas, cấu hình lưu trữ IPFS qua Pinata, và sử dụng `speakeasy` sinh mã bí mật cho thuật toán QR động (TOTP 20 giây/lần).
+- [x] **Xây dựng Backend hoàn chỉnh:** Thiết lập thành công Express Server tại cổng 5000. Kết nối thành công MongoDB Atlas, cấu hình lưu trữ IPFS qua Pinata, và sử dụng `speakeasy` sinh mã bí mật cho thuật toán QR động (TOTP).
 - [x] **Tích hợp Toàn diện Frontend & Backend (Admin):**
   - Đã xóa sạch Mock Data.
   - Form tạo sự kiện đã chuyển đổi sang `FormData` và gửi thành công dữ liệu/ảnh thật lên Backend.
@@ -181,6 +186,21 @@ club-poap-system/
 == Ngày 07/11/2026: ==
 ====================
 
+**A. Đã hoàn thành (Người 1 - Tuyen - Hoàn thiện Admin, Quản lý Sinh viên & Đồng bộ Lớp toàn hệ thống):**
+- [x] **Bổ sung Đơn vị tổ chức (`organizer`) cho Sự kiện:**
+  - Thêm trường chọn đơn vị tổ chức (`Khoa CNTT`, `CLB Tin Học`, `Đoàn Thanh Niên`, `Hội Sinh Viên`) vào `CreateEventForm.tsx`, lưu vào `models/Event.js` và đính kèm vào thuộc tính JSON Metadata trên IPFS.
+  - Hiển thị nhãn đơn vị tổ chức trên bảng sự kiện (`EventTable.tsx`), khung trình chiếu QR (`LiveQrStage.tsx`) và đồng bộ với bộ lọc của trang Bộ sưu tập (`/collection`).
+- [x] **Tự động khóa sự kiện khi đủ số lượng (`capacity`):**
+  - Nâng cấp Backend (`GET /api/events`, `GET /:id/qr-token`, `POST /record-success`) và Frontend (`LiveQrStage.tsx`, `EventTable.tsx`): tự động chuyển trạng thái sự kiện sang `'closed'`, ngừng cấp mã QR và khóa nút mở lại khi `currentAttendees >= capacity`.
+- [x] **Tính năng Xem danh sách sinh viên đã điểm danh & Xuất CSV (Excel) cho Admin:**
+  - Xây dựng API `GET /api/events/:id/attendees` trả về danh sách sinh viên đã điểm danh của từng sự kiện.
+  - Bổ sung Modal danh sách sinh viên trong `EventTable.tsx` khi bấm vào cột số lượng (`currentAttendees / capacity`), hỗ trợ thanh tìm kiếm nhanh, link kiểm tra giao dịch trực tiếp trên Sepolia Etherscan và nút **Xuất CSV (Excel)** có hỗ trợ tiếng Việt (`UTF-8 BOM`).
+- [x] **Bổ sung trường Lớp (`className`) đồng bộ xuyên suốt toàn hệ thống:**
+  - **Database & API:** Thêm trường `className` vào `models/Attendance.js` và trả thêm `className` trong `routes/collection.js` (`toBadge`).
+  - **Bảo mật & Chữ ký ví (`routes/events.js`):** Đưa thông tin `Lớp` vào thông điệp ký MetaMask (`POST /student-challenge`), kiểm tra tính nhất quán của Lớp với MSSV/Ví (`POST /student-checkin`), lưu `className` khi mint thành công (`POST /record-success`) và tự động cập nhật bổ sung `className` cho các lượt điểm danh cũ của cùng ví.
+  - **Giao diện Điểm danh (`EventDetailsPanel.tsx`):** Thêm ô nhập `Lớp` cạnh `MSSV`; tự động điền và khóa ô `Lớp` nếu ví đã liên kết trước đó.
+  - **Giao diện Admin (`EventTable.tsx`):** Bổ sung cột `Lớp` vào bảng Danh sách sinh viên đã điểm danh, cho phép tìm kiếm theo Lớp và xuất cột `Lớp` trong file CSV (Excel).
+
 **B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
 - [x] **Đồng bộ nhánh `tuyen` vào `tram`:** Lấy đủ phần Smart Contract (`blockchain/`), `contractABI.json` và các file Admin mới; cài lại thư viện, cấu hình `.env` / `.env.local`.
 - [x] **Nhận huy hiệu bằng Smart Contract thật (`EventDetailsPanel.tsx`):**
@@ -202,22 +222,26 @@ club-poap-system/
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
 
-Danh sách các API hoàn thiện tại `http://localhost:5000/api/events`:
-
-1. **`POST /`**: Tạo sự kiện mới (Upload ảnh/Metadata lên IPFS, lưu MongoDB, cấu hình `contractAddress`).
-2. **`GET /`**: Lấy danh sách toàn bộ sự kiện cho Bảng Quản trị.
+### A. Cụm API Sự kiện & Điểm danh (`http://localhost:5000/api/events`)
+1. **`POST /`**: Tạo sự kiện mới (Upload ảnh/Metadata lên IPFS, lưu MongoDB kèm `organizer`, cấu hình `contractAddress`).
+2. **`GET /`**: Lấy danh sách toàn bộ sự kiện cho Bảng Quản trị (tự động đóng sự kiện đã đủ chỗ).
 3. **`GET /:id/qr-token`**: Lấy mã TOTP hiện tại (`token`, `refreshInterval`, `remainingSeconds`).
 4. **`PATCH /:id/status`**: Đóng/Mở trạng thái sự kiện (`upcoming`, `open`, `closed`).
-5. **`POST /verify-qr`**: Kiểm tra mã QR (API cũ).
+5. **`POST /verify-qr`**: Kiểm tra mã QR (API cơ bản).
 6. **`POST /:id/force-refresh-qr`**: Ép đổi khóa bí mật (Secret) để tạo mã khẩn cấp.
+7. **`GET /:id/attendees`**: Lấy danh sách sinh viên đã điểm danh của sự kiện (gồm `studentId`, `fullName`, `className`, `walletAddress`, `claimedAt`, `txHash`) phục vụ Modal quản trị và xuất file CSV.
+8. **`POST /student-preview`**: Lấy thông tin sự kiện sau khi quét/nhập mã.
+9. **`POST /student-challenge`**: Tạo thông điệp có nonce (kèm Ví, MSSV, Họ tên, Lớp) để sinh viên ký bằng MetaMask.
+10. **`POST /student-checkin`**: Xác thực mã QR + chữ ký ví + ràng buộc 1-1 giữa Ví/MSSV/Họ tên/Lớp + chống claim 2 lần.
+11. **`POST /record-success`**: Ghi lịch sử điểm danh sau khi Mint thành công. Kiểm tra `txHash` đúng định dạng và xác minh giao dịch thật trên Sepolia (thành công, đúng contract, đúng ví gửi), chặn `txHash` dùng lại.
 
-**Phân hệ Sinh viên (Trâm):**
-7. **`POST /student-preview`**: Lấy thông tin sự kiện sau khi quét/nhập mã.
-8. **`POST /student-challenge`**: Tạo thông điệp có nonce để ký MetaMask.
-9. **`POST /student-checkin`**: Xác thực mã QR + chữ ký ví + ràng buộc ví/MSSV/họ tên + chống claim 2 lần.
-10. **`POST /record-success`**: Ghi lịch sử điểm danh sau khi Mint thành công. Kiểm tra `txHash` đúng định dạng và xác minh giao dịch thật trên Sepolia (thành công, đúng contract, đúng ví gửi), chặn `txHash` dùng lại.
+### B. Cụm API Bộ sưu tập & Xác minh (`http://localhost:5000/api/collection`)
+12. **`GET /:wallet`**: Lấy danh sách các huy hiệu đã mint thành công của ví (hỗ trợ tìm kiếm và sắp xếp).
+13. **`GET /:wallet/:eventId`**: Xem chi tiết 1 huy hiệu của ví theo sự kiện.
+14. **`GET /verify/:eventId/:wallet`**: API xác minh công khai dành cho Nhà trường / Nhà tuyển dụng.
 
 ---
 
-## 6. NHIỆM VỤ TIẾP THEO (HOÀN THIỆN ĐỒ ÁN)
-- [ ] **Kiệt (Người 3):** Hoàn thiện liên kết nút "Xem trên Sepolia Etherscan" trong `CredentialModal.tsx`, bổ sung bước xác minh on-chain bằng `ownerOf` / `balanceOf` nếu cần thiết.
+## 6. TRẠNG THÁI DỰ ÁN (SẴN SÀNG BẢO VỆ ĐỒ ÁN)
+- [x] **Hoàn thiện 100% cả 3 phân hệ:** Ban Tổ Chức (`/admin`) — Sinh Viên Điểm Danh (`/checkin`) — Bộ Sưu Tập Cá Nhân (`/collection`).
+- [x] **Smart Contract (`ClubPOAP.sol` - ERC-5192):** Đã triển khai và kiểm thử thực tế trên mạng **Sepolia Testnet** (`0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`).
