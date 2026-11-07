@@ -192,6 +192,12 @@ club-poap-system/
 - [x] **Xác minh thực tế trên Sepolia:** Nhận huy hiệu thành công (Token ID 1 và 2), trạng thái `Success`, đúng contract `0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`; huy hiệu hiển thị ở `/collection`.
 - [x] **Sửa lỗi phụ:** Cảnh báo trùng key ở trang Admin (`admin/page.tsx`): `handleCreateEvent` lọc trùng theo `_id`.
 
+**D. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân; phần này do Trâm làm thay, nhánh `tram`):**
+- [x] **Xác minh huy hiệu on-chain (`hooks/useOnchainVerify.ts`):** Đọc receipt của `txHash` trên Sepolia, lấy `tokenId` thật từ event `Transfer` (mint), đối chiếu `ownerOf(tokenId)` với ví đang xem, đọc `balanceOf(ví)` và `locked(tokenId)` (ERC-5192) trực tiếp từ contract, không phụ thuộc Backend.
+- [x] **Nâng cấp `CredentialModal.tsx`:** Nhãn "Đã xác thực" phản ánh kết quả on-chain thật (đang kiểm tra / đã xác minh / không khớp / lỗi); thuộc tính khóa đọc từ `locked()`; hiển thị `ownerOf`, `balanceOf`, khối mint, địa chỉ contract (có nút copy).
+- [x] **Liên kết Etherscan:** Nút "Xem Giao Dịch" (`/tx/<txHash>`), "Xem Token" (`/token/<contract>?a=<tokenId>`) và link contract.
+- [x] **Kiểm thử thực tế trên Sepolia:** Token #3 và #5 xác minh thành công, `ownerOf` khớp ví, `locked` = true, trang Transfers trên Etherscan chỉ có 1 dòng mint (chứng minh Soulbound).
+
 ---
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
