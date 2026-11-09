@@ -136,127 +136,77 @@ club-poap-system/
 
 ## 4. TIẾN ĐỘ HIỆN TẠI & BÀN GIAO (Cập nhật mới nhất)
 
+4. TIẾN ĐỘ HIỆN TẠI & BÀN GIAO (Cập nhật mới nhất)
+
 ====================
 == Ngày 26/10/2026: ==
-====================
 
-**A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
-- [x] **Cấu trúc thư mục:** Đã dọn dẹp sạch sẽ lỗi `import`, xử lý dứt điểm tình trạng trùng lặp thư mục `components`.
-- [x] **Giao diện Admin (`/admin`):** Đã phân rã chuẩn thành các component độc lập.
-- [x] **Navbar (Web3 Wallet):** Thay thế dữ liệu giả bằng kết nối **MetaMask thực tế 100%** qua Wagmi.
+A. Đã hoàn thành (Người 1 - Tuyen - Admin):
+
+[x] Cấu trúc dự án & Giao diện Admin (/admin): Chuẩn hóa cấu trúc thư mục, phân rã trang Admin thành các component độc lập và tích hợp kết nối ví MetaMask thực tế qua wagmi.
 
 ====================
 == Ngày 29/10/2026: ==
-====================
 
-**A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
-- [x] **Xây dựng Backend hoàn chỉnh:** Thiết lập thành công Express Server tại cổng 5000. Kết nối thành công MongoDB Atlas, cấu hình lưu trữ IPFS qua Pinata, và sử dụng `speakeasy` sinh mã bí mật cho thuật toán QR động (TOTP).
-- [x] **Tích hợp Toàn diện Frontend & Backend (Admin):**
-  - Đã xóa sạch Mock Data.
-  - Form tạo sự kiện đã chuyển đổi sang `FormData` và gửi thành công dữ liệu/ảnh thật lên Backend.
-  - Bảng Quản trị hiển thị Real-time từ Database, các trạng thái Đóng/Mở hoạt động mượt mà.
-  - Xử lý hoàn tất lỗi bộ Date-time picker thân thiện và lỗi nhập số 0.
-  - Xử lý triệt để các cảnh báo lỗi liên kết thư viện `wagmi` / MetaMask.
+A. Đã hoàn thành (Người 1 - Tuyen - Admin):
+
+[x] Xây dựng Backend & Tích hợp Admin: Khởi tạo Express Server (cổng 5000), kết nối MongoDB Atlas, Pinata IPFS và thuật toán QR động (speakeasy TOTP). Nối thành công Form tạo sự kiện (FormData) và Bảng quản trị thời gian thực từ Database.
+
+B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh):
+
+[x] Giao diện Điểm danh (/checkin): Xây dựng hoàn chỉnh bộ khung giao diện sinh viên gồm ScannerPanel.tsx (3 tab: Camera, Tải ảnh, Nhập mã) và EventDetailsPanel.tsx (hiển thị thông tin sự kiện, form định danh sinh viên và các trạng thái chờ ký/thành công).
+
+C. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân):
+
+[x] Giao diện Bộ sưu tập (/collection): Xây dựng hoàn chỉnh giao diện hồ sơ sinh viên (StudentProfileHeader.tsx), thanh lọc/tìm kiếm (FilterToolbar.tsx), lưới thẻ huy hiệu (BadgeCard.tsx) và Modal chi tiết chứng nhận (CredentialModal.tsx).
 
 ====================
 == Ngày 31/10/2026: ==
-====================
 
-**A. Đã hoàn thành (Người 1 - Tuyen - Admin):**
-- [x] **Hoàn thiện IPFS & Metadata chuẩn ERC-721:** Hệ thống nay đã đẩy cả ảnh (`ipfsImageHash`) và file JSON chứa thuộc tính sự kiện (`ipfsMetadataHash` / `tokenURI`) lên Pinata để sẵn sàng đúc NFT.
-- [x] **Fix logic UI/UX màn hình Admin:**
-  - Ẩn/khóa hoàn toàn mã QR khi sự kiện chuyển trạng thái "Đã kết thúc", thêm biểu tượng ổ khóa.
-  - Đồng bộ thành công hiển thị số lượng sinh viên (`capacity`) và ID thật (`_id`) lên URL QR Code.
-  - Sửa lỗi tràn chữ khi upload file ảnh có tên quá dài.
-- [x] **Xử lý thuật toán TOTP (Chống gian lận thời gian):**
-  - Nâng cấp API trả về "số giây thực tế còn lại" của mã QR để Frontend đếm ngược chính xác tuyệt đối, tránh lỗi "Lệch nhịp".
-  - Bổ sung Nút **"Đổi Mã Ngay" (Panic Button)**: Gọi API mới ép đổi toàn bộ `qrSecret` để giết mã cũ ngay lập tức nếu bị chụp lén.
-- [x] **Clean code & Tối ưu:** Dọn dẹp sạch sẽ các cảnh báo rác của Mongoose (vụ `deprecated new: true`) và Webpack (vụ thư viện `ox`).
+A. Đã hoàn thành (Người 1 - Tuyen - Admin):
+
+[x] Chuẩn hóa Metadata ERC-721 & QR TOTP: Đẩy ảnh + JSON Metadata (tokenURI) lên IPFS Pinata. Đồng bộ bộ đếm ngược TOTP theo thời gian thực từ Server, khóa QR khi sự kiện đóng và thêm nút "Đổi Mã Ngay" (reset qrSecret khẩn cấp).
 
 ====================
 == Ngày 01/11/2026: ==
-====================
 
-**B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
-- [x] **Sửa lỗi 404 khi Claim:** Mã dự phòng trên màn chiếu chỉ hiển thị 4/6 số của mã TOTP nên Backend không xác thực được. Đã sửa `LiveQrStage.tsx` hiển thị đủ 6 số (`#POAP-XXXXXX`).
-- [x] **Hoàn thiện 3 phương thức điểm danh (`ScannerPanel.tsx`):**
-  - **Nhập mã dự phòng:** Chấp nhận `#POAP-123456`, `123456` hoặc dán link QR.
-  - **Quét bằng Camera:** Dùng thư viện `html5-qrcode`, có chọn camera, bỏ qua camera ảo, báo lỗi rõ ràng.
-  - **Tải ảnh QR:** Đọc mã QR trực tiếp từ ảnh (PNG, JPG, WEBP).
-- [x] **Quét bằng camera điện thoại:** Trang `/checkin` tự đọc `eventId` + `token` từ link QR.
-- [x] **Viết lại API `POST /student-checkin`:** Chuẩn hóa mã, luôn xác thực TOTP, kiểm tra ví/MSSV/họ tên, sự kiện đang mở, còn chỗ; **chống claim 2 lần** theo ví hoặc MSSV (409); trả thêm thông tin sự kiện và `code` lỗi.
-- [x] **Nâng cấp API `POST /record-success`:** Kiểm tra dữ liệu, chống ghi trùng, trả về số người đã điểm danh.
-- [x] **Sửa lỗi phụ:** Nút "Đổi Mã Ngay" ở chế độ máy chiếu nay đổi mã thật; thêm ví Admin thứ 2.
- 
-**D. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân, nhánh `kiet`):**
-- [x] **Backend Bộ sưu tập (`backend/src/routes/collection.js`):** Viết 3 API mới tại `/api/collection`, tách riêng khỏi `events.js`. Chỉ đọc dữ liệu từ model `Event` và `Attendance`.
-  - Tra cứu huy hiệu theo địa chỉ ví, chỉ hiển thị huy hiệu đã mint thành công (có `txHash`).
-  - Hỗ trợ tìm kiếm theo tên sự kiện / đơn vị tổ chức và sắp xếp mới nhất / cũ nhất.
-  - Trả sẵn link ảnh IPFS, link giao dịch và link contract trên Sepolia Etherscan.
-- [x] **Nối Frontend `/collection` với dữ liệu thật:**
-  - Xóa toàn bộ Mock Data.
-  - Tạo `lib/collectionApi.ts`, `hooks/useCollection.ts` và `lib/collectionMapper.ts`.
-  - Tích hợp trạng thái: chưa kết nối ví, đang tải, báo lỗi, chưa có huy hiệu.
+B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh):
+
+[x] Xử lý quét QR & API Điểm danh: Tích hợp html5-qrcode quét camera/tải ảnh QR và nhận diện mã 6 số (#POAP-XXXXXX). Xây dựng API POST /student-checkin và POST /record-success kiểm tra TOTP, trạng thái sự kiện và chống điểm danh trùng.
+
+C. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân):
+
+[x] Backend & Tích hợp Bộ sưu tập (/collection): Xây dựng 3 API tại routes/collection.js (danh sách theo ví, chi tiết huy hiệu, xác minh công khai). Xóa Mock Data, nối Frontend với dữ liệu thật qua useCollection.ts và collectionMapper.ts.
 
 ====================
 == Ngày 05/11/2026: ==
-====================
 
-**B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
-- [x] **Merge nhánh `kiet` vào `tram`:** Lấy đủ file Bộ sưu tập; thêm lại nút `ConnectWalletButton` ở trang chủ.
-- [x] **Xác thực ví bằng chữ ký MetaMask:**
-  - **`POST /student-challenge`:** Sinh thông điệp có nonce ngẫu nhiên (hết hạn 5 phút).
-  - **`POST /student-checkin`:** Kiểm tra chữ ký bằng `ethers.verifyMessage`, khớp ví mới cho điểm danh.
-  - **`POST /record-success`:** Nhận `claimTicket` + `txHash`.
-- [x] **Ràng buộc định danh & Dữ liệu sự kiện thật (`/checkin`):** 1 ví gắn 1 MSSV; API `POST /student-preview` trả thông tin sự kiện.
+A. Đã hoàn thành (Người 1 - Tuyen - Smart Contract & Blockchain):
 
-**C. Đã hoàn thành (Người 1 - Tuyen - Smart Contract & Blockchain Integration):**
-- [x] **Triển khai Smart Contract chuẩn ERC-5192 (Soulbound Token):**
-  - Viết và biên dịch hợp đồng `ClubPOAP.sol` tích hợp OpenZeppelin v5, hỗ trợ khóa vĩnh viễn (Non-transferable) và chặn hàm `transferFrom`.
-  - Cấu hình Hardhat (`hardhat.config.js`) nhắm mục tiêu EVM Cancun tương thích chuẩn Solidity `0.8.24`.
-- [x] **Deploy thành công lên mạng Sepolia Testnet:**
-  - Địa chỉ Smart Contract chính thức: `0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`
-  - Đã lưu ABI vào `frontend/src/lib/contractABI.json` và cập nhật biến môi trường `CONTRACT_ADDRESS` / `NEXT_PUBLIC_CONTRACT_ADDRESS`.
-- [x] **Tích hợp Web3 Write Contract vào phân hệ Admin (`CreateEventForm.tsx`):**
-  - Sử dụng thư viện `wagmi` (`useWriteContract`) để sau khi tạo sự kiện trên Database thành công, cửa sổ MetaMask tự động bật lên yêu cầu Admin ký giao dịch `createEvent` đưa sự kiện lên Blockchain on-chain.
+[x] Triển khai Smart Contract ERC-5192 (ClubPOAP.sol): Viết hợp đồng Soulbound NFT (khóa chuyển nhượng vĩnh viễn) bằng OpenZeppelin v5, deploy lên Sepolia Testnet (0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13) và tích hợp hàm createEvent vào CreateEventForm.tsx.
+
+B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh):
+
+[x] Bảo mật chữ ký ví & Định danh 1-1: Bổ sung luồng ký nonce MetaMask (POST /student-challenge), xác thực chữ ký bằng ethers.verifyMessage, cấp vé claimTicket dùng 1 lần, ràng buộc 1 ví - 1 MSSV và thêm API POST /student-preview.
 
 ====================
 == Ngày 07/11/2026: ==
-====================
 
-**A. Đã hoàn thành (Người 1 - Tuyen - Hoàn thiện Admin, Quản lý Sinh viên & Đồng bộ Lớp toàn hệ thống):**
-- [x] **Bổ sung Đơn vị tổ chức (`organizer`) cho Sự kiện:**
-  - Thêm trường chọn đơn vị tổ chức (`Khoa CNTT`, `CLB Tin Học`, `Đoàn Thanh Niên`, `Hội Sinh Viên`) vào `CreateEventForm.tsx`, lưu vào `models/Event.js` và đính kèm vào thuộc tính JSON Metadata trên IPFS.
-  - Hiển thị nhãn đơn vị tổ chức trên bảng sự kiện (`EventTable.tsx`), khung trình chiếu QR (`LiveQrStage.tsx`) và đồng bộ với bộ lọc của trang Bộ sưu tập (`/collection`).
-- [x] **Tự động khóa sự kiện khi đủ số lượng (`capacity`):**
-  - Nâng cấp Backend (`GET /api/events`, `GET /:id/qr-token`, `POST /record-success`) và Frontend (`LiveQrStage.tsx`, `EventTable.tsx`): tự động chuyển trạng thái sự kiện sang `'closed'`, ngừng cấp mã QR và khóa nút mở lại khi `currentAttendees >= capacity`.
-- [x] **Tính năng Xem danh sách sinh viên đã điểm danh & Xuất CSV (Excel) cho Admin:**
-  - Xây dựng API `GET /api/events/:id/attendees` trả về danh sách sinh viên đã điểm danh của từng sự kiện.
-  - Bổ sung Modal danh sách sinh viên trong `EventTable.tsx` khi bấm vào cột số lượng (`currentAttendees / capacity`), hỗ trợ thanh tìm kiếm nhanh, link kiểm tra giao dịch trực tiếp trên Sepolia Etherscan và nút **Xuất CSV (Excel)** có hỗ trợ tiếng Việt (`UTF-8 BOM`).
-- [x] **Bổ sung trường Lớp (`className`) đồng bộ xuyên suốt toàn hệ thống:**
-  - **Database & API:** Thêm trường `className` vào `models/Attendance.js` và trả thêm `className` trong `routes/collection.js` (`toBadge`).
-  - **Bảo mật & Chữ ký ví (`routes/events.js`):** Đưa thông tin `Lớp` vào thông điệp ký MetaMask (`POST /student-challenge`), kiểm tra tính nhất quán của Lớp với MSSV/Ví (`POST /student-checkin`), lưu `className` khi mint thành công (`POST /record-success`) và tự động cập nhật bổ sung `className` cho các lượt điểm danh cũ của cùng ví.
-  - **Giao diện Điểm danh (`EventDetailsPanel.tsx`):** Thêm ô nhập `Lớp` cạnh `MSSV`; tự động điền và khóa ô `Lớp` nếu ví đã liên kết trước đó.
-  - **Giao diện Admin (`EventTable.tsx`):** Bổ sung cột `Lớp` vào bảng Danh sách sinh viên đã điểm danh, cho phép tìm kiếm theo Lớp và xuất cột `Lớp` trong file CSV (Excel).
+A. Đã hoàn thành (Người 1 - Tuyen - Hoàn thiện Admin & Đồng bộ Lớp toàn hệ thống):
 
-**B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh, nhánh `tram`):**
-- [x] **Đồng bộ nhánh `tuyen` vào `tram`:** Lấy đủ phần Smart Contract (`blockchain/`), `contractABI.json` và các file Admin mới; cài lại thư viện, cấu hình `.env` / `.env.local`.
-- [x] **Nhận huy hiệu bằng Smart Contract thật (`EventDetailsPanel.tsx`):**
-  - Thay `txHash` giả bằng giao dịch thật: sinh viên tự ký và trả gas, gọi `claimBadge(eventId, tokenURI)` qua `wagmi` (`useWriteContract`), `eventId` là `_id` MongoDB của sự kiện (khớp với `createEvent` phía Admin).
-  - Đợi giao dịch được xác nhận trên Sepolia rồi mới gọi `POST /record-success` với `txHash` thật.
-  - Báo lỗi rõ ràng: từ chối ký trong MetaMask, ví không đủ ETH Sepolia, ví đã nhận huy hiệu của sự kiện đó.
-- [x] **Nâng cấp `POST /record-success`:** Bật kiểm tra định dạng `txHash`, xác minh giao dịch trên Sepolia (thành công, đúng contract, đúng ví gửi) và chặn dùng lại cùng một `txHash`. Cần có `CONTRACT_ADDRESS` trong `backend/.env`.
-- [x] **Kiểm thử Smart Contract (`blockchain/test/ClubPOAP.test.js`):** 24 test đạt trên mạng Hardhat giả lập (tạo sự kiện, nhận huy hiệu, chống nhận 2 lần, hết chỗ, Soulbound không chuyển nhượng được, phân quyền Admin).
-- [x] **Xác minh thực tế trên Sepolia:** Nhận huy hiệu thành công (Token ID 1 và 2), trạng thái `Success`, đúng contract `0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`; huy hiệu hiển thị ở `/collection`.
-- [x] **Sửa lỗi phụ:** Cảnh báo trùng key ở trang Admin (`admin/page.tsx`): `handleCreateEvent` lọc trùng theo `_id`.
+[x] Bổ sung Đơn vị tổ chức (organizer) & Tự động khóa khi đủ chỗ: Thêm lựa chọn đơn vị tổ chức khi tạo sự kiện (đồng bộ IPFS & bộ lọc /collection); tự động khóa sự kiện và ngừng cấp QR khi currentAttendees >= capacity.
 
-**D. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân; phần này do Trâm làm thay, nhánh `tram`):**
-- [x] **Xác minh huy hiệu on-chain (`hooks/useOnchainVerify.ts`):** Đọc receipt của `txHash` trên Sepolia, lấy `tokenId` thật từ event `Transfer` (mint), đối chiếu `ownerOf(tokenId)` với ví đang xem, đọc `balanceOf(ví)` và `locked(tokenId)` (ERC-5192) trực tiếp từ contract, không phụ thuộc Backend.
-- [x] **Nâng cấp `CredentialModal.tsx`:** Nhãn "Đã xác thực" phản ánh kết quả on-chain thật (đang kiểm tra / đã xác minh / không khớp / lỗi); thuộc tính khóa đọc từ `locked()`; hiển thị `ownerOf`, `balanceOf`, khối mint, địa chỉ contract (có nút copy).
-- [x] **Liên kết Etherscan:** Nút "Xem Giao Dịch" (`/tx/<txHash>`), "Xem Token" (`/token/<contract>?a=<tokenId>`) và link contract.
-- [x] **Kiểm thử thực tế trên Sepolia:** Token #3 và #5 xác minh thành công, `ownerOf` khớp ví, `locked` = true, trang Transfers trên Etherscan chỉ có 1 dòng mint (chứng minh Soulbound).
+[x] Xem danh sách sinh viên & Xuất CSV (Excel): Tạo API GET /:id/attendees và Modal quản lý danh sách sinh viên trong EventTable.tsx (tìm kiếm, link Etherscan, xuất file CSV chuẩn UTF-8).
 
----
+[x] Bổ sung trường Lớp (className) toàn hệ thống: Thêm className vào Attendance.js, thông điệp ký MetaMask, kiểm tra định danh, form Điểm danh (EventDetailsPanel.tsx) và bảng/file CSV của Admin (EventTable.tsx).
+
+B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh):
+
+[x] Mint Soulbound NFT thật & Đối chiếu giao dịch Sepolia: Nối hàm claimBadge(eventId, tokenURI) vào EventDetailsPanel.tsx. Nâng cấp POST /record-success kiểm tra receipt thật trên Sepolia (đúng contract, đúng ví, thành công) và hoàn thành 24 unit test Hardhat (ClubPOAP.test.js).
+
+C. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân):
+
+[x] Xác minh On-chain trực tiếp (useOnchainVerify.ts & CredentialModal.tsx): Đọc trực tiếp receipt giao dịch, ownerOf(tokenId), balanceOf(ví) và locked(tokenId) (ERC-5192) trên mạng Sepolia, kèm nút liên kết giao dịch và token trên Sepolia Etherscan.
 
 ## 5. TÀI LIỆU BACKEND API (GIAO TIẾP VỚI FRONTEND)
 
