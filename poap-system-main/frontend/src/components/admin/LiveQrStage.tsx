@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from '@/lib/apiBase';
 
 import React, { useState, useEffect, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
@@ -60,7 +61,7 @@ export default function LiveQrStage({
 
     try {
       const res = await fetch(
-        `http://localhost:5000/api/events/${activeEvent._id}/qr-token`
+        `${API_BASE}/events/${activeEvent._id}/qr-token`
       );
       if (res.ok) {
         const data = await res.json();
@@ -79,7 +80,7 @@ export default function LiveQrStage({
 
     try {
       const res = await fetch(
-        `http://localhost:5000/api/events/${activeEvent._id}/force-refresh-qr`,
+        `${API_BASE}/events/${activeEvent._id}/force-refresh-qr`,
         {
           method: "POST",
         }

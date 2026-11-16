@@ -1,4 +1,5 @@
 'use client';
+import { API_BASE } from '@/lib/apiBase';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAccount, useSignMessage, useWriteContract, usePublicClient } from 'wagmi';
@@ -77,7 +78,7 @@ export default function EventDetailsPanel({
     const loadBoundStudent = async () => {
       setCheckingWallet(true);
       try {
-        const res = await axios.get(`http://localhost:5000/api/collection/${address}`);
+        const res = await axios.get(`${API_BASE}/collection/${address}`);
         const badges: any[] = res.data?.badges || [];
         // Lấy lượt điểm danh gần nhất có đủ MSSV + họ tên
         const bound = badges.find((b) => b.studentId && b.fullName);
@@ -137,7 +138,7 @@ export default function EventDetailsPanel({
     try {
       // 1. Xin thông điệp xác thực (có nonce dùng 1 lần) từ backend
       setStatusText('Đang tạo phiên xác thực...');
-      const challengeRes = await axios.post('http://localhost:5000/api/events/student-challenge', {
+      const challengeRes = await axios.post(`${API_BASE}/events/student-challenge`, {
         walletAddress: address,
         studentId: studentId.trim(),
         fullName: fullName.trim()
@@ -157,7 +158,7 @@ export default function EventDetailsPanel({
 
       // 3. Gửi mã QR + chữ ký lên backend (MSSV/họ tên backend lấy từ thông điệp đã ký)
       setStatusText('Đang xác thực điểm danh...');
-      const response = await axios.post('http://localhost:5000/api/events/student-checkin', {
+      const response = await axios.post(`${API_BASE}/events/student-checkin`, {
         eventId: scannedEventId || null, // null -> Backend tự dò sự kiện theo token
         qrToken: tokenOrCodeToVerify,
         walletAddress: address,
@@ -196,7 +197,7 @@ export default function EventDetailsPanel({
       setStatusText('');
 
       // 6. Ghi nhận lịch sử: chỉ gửi vé dùng 1 lần + txHash thật
-      await axios.post('http://localhost:5000/api/events/record-success', {
+      await axios.post(`${API_BASE}/events/record-success`, {
         claimTicket,
         txHash: mintedTxHash
       });
@@ -223,7 +224,7 @@ export default function EventDetailsPanel({
           errorMsg = serverMsg || `Lỗi server (${status}), vui lòng thử lại!`;
         }
       } else if (axios.isAxiosError(error) && error.request) {
-        errorMsg = 'Không kết nối được server (localhost:5000). Backend đã chạy chưa?';
+        errorMsg = 'Không kết nối được server. Backend đã chạy chưa?';
       } else if (error?.name === 'UserRejectedRequestError' || /user rejected|denied/i.test(chainMsg)) {
         errorMsg = 'Bạn đã từ chối giao dịch trong MetaMask.';
       } else if (/insufficient funds/i.test(chainMsg)) {

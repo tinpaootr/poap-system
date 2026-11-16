@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from '@/lib/apiBase';
 
 import React, { useState } from "react";
 import {
@@ -73,7 +74,7 @@ export default function EventTable({
     setStudentSearch("");
     setLoadingAttendees(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/events/${ev._id}/attendees`);
+      const res = await fetch(`${API_BASE}/events/${ev._id}/attendees`);
       if (res.ok) {
         const data = await res.json();
         setAttendees(data.attendees || []);

@@ -1,4 +1,5 @@
 'use client';
+import { API_BASE } from '@/lib/apiBase';
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
@@ -30,7 +31,7 @@ export default function CheckinPage() {
     setLoadingEvent(true);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/events/student-preview', {
+      const res = await axios.post(`${API_BASE}/events/student-preview`, {
         eventId: eventId || null, // rỗng -> backend tự dò sự kiện đang mở
         qrToken: token
       });
@@ -42,7 +43,7 @@ export default function CheckinPage() {
     } catch (error: any) {
       const msg = axios.isAxiosError(error) && error.response
         ? error.response.data?.error || 'Mã check-in không hợp lệ.'
-        : 'Không kết nối được server (localhost:5000). Backend đã chạy chưa?';
+        : 'Không kết nối được server. Backend đã chạy chưa?';
       console.warn('[checkin] preview lỗi:', error); // warn để Next.js không bật overlay đỏ
       setScanError(msg);
     } finally {

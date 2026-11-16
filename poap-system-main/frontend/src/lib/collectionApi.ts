@@ -1,7 +1,7 @@
 // frontend/src/lib/collectionApi.ts
 // Người 3 - Gọi API Bộ sưu tập huy hiệu cá nhân
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+import { API_BASE } from './apiBase';
 
 export interface Badge {
   eventId: string;

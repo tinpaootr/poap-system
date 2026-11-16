@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from '@/lib/apiBase';
 
 import React, { useState, useEffect } from "react";
 import { ShieldCheck, Lock, AlertOctagon, Wallet, QrCode } from "lucide-react";
@@ -30,7 +31,7 @@ export default function AdminPage() {
 
   const fetchEvents = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/events");
+      const res = await fetch(`${API_BASE}/events`);
       const data = await res.json();
       setEvents(data);
 
@@ -67,7 +68,7 @@ export default function AdminPage() {
 
   const handleUpdateStatus = async (eventId: string, newStatus: EventStatus) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/events/${eventId}/status`, {
+      const res = await fetch(`${API_BASE}/events/${eventId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),

@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from '@/lib/apiBase';
 
 import React, { useState } from "react";
 import {
@@ -70,7 +71,7 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
 
     try {
       setStatusMessage("Đang tải ảnh lên IPFS & lưu Database...");
-      const res = await fetch("http://localhost:5000/api/events", {
+      const res = await fetch(`${API_BASE}/events`, {
         method: "POST",
         body: formData,
       });
