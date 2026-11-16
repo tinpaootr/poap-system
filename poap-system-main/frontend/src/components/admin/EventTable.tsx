@@ -29,6 +29,7 @@ interface AttendeeRecord {
   walletAddress: string;
   studentId: string;
   fullName: string;
+  className?: string;
   claimedAt: string;
   txHash?: string;
 }
@@ -96,6 +97,7 @@ export default function EventTable({
       "STT",
       "MSSV",
       "Họ và Tên",
+      "Lớp",
       "Địa chỉ Ví MetaMask",
       "Thời gian điểm danh",
       "Mã giao dịch (TxHash)",
@@ -104,6 +106,7 @@ export default function EventTable({
       idx + 1,
       `"${att.studentId}"`,
       `"${att.fullName}"`,
+      `"${att.className || ""}"`,
       att.walletAddress,
       `"${new Date(att.claimedAt).toLocaleString("vi-VN")}"`,
       att.txHash || "",
@@ -129,6 +132,7 @@ export default function EventTable({
     (a) =>
       a.studentId.toLowerCase().includes(studentSearch.toLowerCase()) ||
       a.fullName.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      (a.className || "").toLowerCase().includes(studentSearch.toLowerCase()) ||
       a.walletAddress.toLowerCase().includes(studentSearch.toLowerCase())
   );
 
@@ -346,7 +350,7 @@ export default function EventTable({
           }
           className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
         >
-          <div className="bg-[#131b2e] border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-[#131b2e] border border-slate-800 rounded-2xl max-w-5xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="p-6 border-b border-slate-800 flex items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
@@ -390,7 +394,7 @@ export default function EventTable({
                   type="text"
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Tìm theo MSSV, Họ tên hoặc địa chỉ ví..."
+                  placeholder="Tìm theo MSSV, Họ tên, Lớp hoặc địa chỉ ví..."
                   className="w-full bg-[#131b2e] border border-slate-800 focus:border-indigo-500 text-white pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none"
                 />
               </div>
@@ -416,6 +420,7 @@ export default function EventTable({
                         <th className="py-3 px-3 rounded-l-lg">#</th>
                         <th className="py-3 px-3">MSSV</th>
                         <th className="py-3 px-3">Họ và Tên</th>
+                        <th className="py-3 px-3">Lớp</th>
                         <th className="py-3 px-3">Địa chỉ Ví</th>
                         <th className="py-3 px-3">Thời gian</th>
                         <th className="py-3 px-3 text-right rounded-r-lg">
@@ -437,6 +442,9 @@ export default function EventTable({
                             </td>
                             <td className="py-3 px-3 font-medium text-white">
                               {att.fullName}
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-amber-300">
+                              {att.className || "—"}
                             </td>
                             <td className="py-3 px-3 font-mono text-indigo-300">
                               {att.walletAddress.slice(0, 6)}...

@@ -167,7 +167,7 @@ router.post('/verify-qr', async (req, res) => {
       secret: event.qrSecret,
       encoding: 'base32',
       token: qrToken,
-      step: event.refreshInterval, // Đọc chu kỳ từ Database
+      step: event.refreshInterval,
       window: 1
     });
 
@@ -175,7 +175,6 @@ router.post('/verify-qr', async (req, res) => {
       return res.status(400).json({ error: 'Mã QR đã hết hạn. Vui lòng quét lại!' });
     }
 
-    // Trả về cả ipfsMetadata (JSON tokenURI) và thông tin sự kiện để Người 2 hiển thị & Mint NFT
     res.status(200).json({
       message: 'Điểm danh hợp lệ!',
       ipfsMetadata: event.ipfsMetadataHash || event.ipfsImageHash,
@@ -204,7 +203,6 @@ router.post('/:id/force-refresh-qr', async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ error: 'Không tìm thấy sự kiện' });
 
-    // CỐT LÕI: Tạo ra một khóa bí mật mới hoàn toàn để vứt bỏ khóa cũ
     event.qrSecret = speakeasy.generateSecret().base32;
     await event.save();
 
@@ -227,40 +225,27 @@ router.post('/:id/force-refresh-qr', async (req, res) => {
 
 
 // =====================================================================
-// 🛡️ NGUOI 2: PHÂN HỆ SINH VIÊN (XÁC THỰC CHỮ KÝ VÍ + CHỐNG TRÙNG + LƯU VẾT)
+// 🛡️ NGƯỜI 2: PHÂN HỆ SINH VIÊN (XÁC THỰC CHỮ KÝ VÍ + CHỐNG TRÙNG + LƯU VẾT)
 // =====================================================================
-//
-// Luồng bảo mật (giống Sign-In with Ethereum):
-//   1. POST /student-challenge -> backend tạo thông điệp có NONCE ngẫu nhiên (dùng 1 lần, 5 phút)
-//   2. Sinh viên ký thông điệp bằng MetaMask (không tốn gas)
-//   3. POST /student-checkin   -> backend khôi phục địa chỉ từ chữ ký, khớp ví mới cho qua
-//                                 => cấp claimTicket dùng 1 lần (10 phút)
-//   4. POST /record-success    -> CHỈ nhận claimTicket + txHash, không tin ví/MSSV từ client
-//   => Không ai giả mạo ví người khác hay gọi thẳng API để ghi huy hiệu giả được.
 
-// Chuẩn hóa mã: "#POAP-123456" / " 123 456 " -> "123456"
 const normalizeToken = (raw) => String(raw || '').replace(/\D/g, '');
 
-// MSSV: 6–12 chữ số (chỉnh lại nếu trường bạn dùng định dạng khác)
 const STUDENT_ID_REGEX = /^\d{6,12}$/;
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
-// ---------- Nonce + vé dùng 1 lần (lưu trong RAM, đủ cho đồ án) ----------
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const TICKET_TTL_MS = 10 * 60 * 1000;
-const challenges = new Map(); // wallet -> { message, studentId, fullName, expiresAt }
-const tickets = new Map();    // ticketId -> { eventId, walletAddress, studentId, fullName, expiresAt }
+const challenges = new Map(); // wallet -> { message, studentId, fullName, className, expiresAt }
+const tickets = new Map();    // ticketId -> { eventId, walletAddress, studentId, fullName, className, expiresAt }
 
 const cleanupExpired = (map) => {
   const now = Date.now();
   for (const [key, value] of map) if (value.expiresAt < now) map.delete(key);
 };
 
-// Hỗ trợ cả ethers v6 (ethers.verifyMessage) và v5 (ethers.utils.verifyMessage)
 const verifyMessageFn = ethers.verifyMessage || (ethers.utils && ethers.utils.verifyMessage);
 
-// Thông tin sự kiện công khai trả về cho trang sinh viên (KHÔNG trả qrSecret)
 const toPublicEvent = (event) => ({
   _id: event._id,
   name: event.name,
@@ -273,20 +258,18 @@ const toPublicEvent = (event) => ({
   contractAddress: event.contractAddress
 });
 
-// Kiểm tra dữ liệu sinh viên, trả về chuỗi lỗi hoặc null
-const validateStudent = ({ walletAddress, studentId, fullName }) => {
-  if (!walletAddress || !studentId || !fullName) return 'Vui lòng cung cấp đầy đủ ví, MSSV và họ tên.';
+// Kiểm tra dữ liệu sinh viên (bao gồm cả Lớp)
+const validateStudent = ({ walletAddress, studentId, fullName, className }) => {
+  if (!walletAddress || !studentId || !fullName || !className) {
+    return 'Vui lòng cung cấp đầy đủ ví, MSSV, họ tên và lớp.';
+  }
   if (!WALLET_REGEX.test(walletAddress)) return 'Địa chỉ ví không hợp lệ.';
   if (!STUDENT_ID_REGEX.test(String(studentId).trim())) return 'MSSV không hợp lệ (chỉ gồm 6–12 chữ số).';
   if (String(fullName).trim().length < 2) return 'Họ tên không hợp lệ.';
+  if (String(className).trim().length < 2) return 'Tên lớp không hợp lệ.';
   return null;
 };
 
-/**
- * Tìm sự kiện đang mở khớp với mã check-in 6 số (TOTP).
- * Có eventId (quét QR) -> kiểm tra đúng sự kiện đó; không có (nhập mã) -> dò các sự kiện đang mở.
- * @returns {{ event } | { status, code, error }}
- */
 async function findEventByToken(eventId, token) {
   const verifyToken = (ev) =>
     speakeasy.totp.verify({
@@ -330,7 +313,6 @@ async function findEventByToken(eventId, token) {
 /**
  * @route   POST /api/events/student-preview
  * @body    { eventId?, qrToken }
- * @desc    Sau khi quét / nhập mã: trả thông tin sự kiện để hiển thị (chưa điểm danh, chưa cần ký)
  */
 router.post('/student-preview', async (req, res) => {
   try {
@@ -353,14 +335,13 @@ router.post('/student-preview', async (req, res) => {
 
 /**
  * @route   POST /api/events/student-challenge
- * @body    { walletAddress, studentId, fullName }
- * @desc    Tạo thông điệp (có nonce) để sinh viên ký bằng MetaMask
+ * @body    { walletAddress, studentId, fullName, className }
  */
 router.post('/student-challenge', async (req, res) => {
   try {
-    let { walletAddress, studentId, fullName } = req.body || {};
+    let { walletAddress, studentId, fullName, className } = req.body || {};
 
-    const studentError = validateStudent({ walletAddress, studentId, fullName });
+    const studentError = validateStudent({ walletAddress, studentId, fullName, className });
     if (studentError) {
       return res.status(400).json({ code: 'INVALID_STUDENT', error: studentError });
     }
@@ -368,6 +349,7 @@ router.post('/student-challenge', async (req, res) => {
     walletAddress = walletAddress.toLowerCase();
     studentId = String(studentId).trim();
     fullName = String(fullName).trim().replace(/\s+/g, ' ');
+    className = String(className).trim().replace(/\s+/g, ' ').toUpperCase();
 
     cleanupExpired(challenges);
     const nonce = crypto.randomBytes(16).toString('hex');
@@ -377,17 +359,18 @@ router.post('/student-challenge', async (req, res) => {
       `Ví: ${walletAddress}`,
       `MSSV: ${studentId}`,
       `Họ tên: ${fullName}`,
+      `Lớp: ${className}`,
       `Nonce: ${nonce}`,
       `Thời điểm: ${new Date().toISOString()}`,
       '',
       'Ký thông điệp này KHÔNG tốn phí gas và KHÔNG cấp quyền chuyển tài sản.'
     ].join('\n');
 
-    // Mỗi ví chỉ giữ 1 challenge mới nhất
     challenges.set(walletAddress, {
       message,
       studentId,
       fullName,
+      className,
       expiresAt: Date.now() + CHALLENGE_TTL_MS
     });
 
@@ -401,7 +384,6 @@ router.post('/student-challenge', async (req, res) => {
 /**
  * @route   POST /api/events/student-checkin
  * @body    { eventId?, qrToken, walletAddress, signature }
- * @desc    Xác thực mã QR + chữ ký ví + kiểm tra MSSV, capacity, chống claim 2 lần
  */
 router.post('/student-checkin', async (req, res) => {
   try {
@@ -417,9 +399,8 @@ router.post('/student-checkin', async (req, res) => {
     }
     walletAddress = walletAddress.toLowerCase();
 
-    // ---- Xác thực chữ ký ví: chứng minh người gửi giữ private key của ví ----
     const challenge = challenges.get(walletAddress);
-    challenges.delete(walletAddress); // nonce chỉ dùng 1 lần (kể cả khi sai)
+    challenges.delete(walletAddress);
 
     if (!challenge || challenge.expiresAt < Date.now()) {
       return res.status(401).json({ code: 'CHALLENGE_EXPIRED', error: 'Phiên xác thực không tồn tại hoặc đã hết hạn. Vui lòng thử lại.' });
@@ -434,10 +415,8 @@ router.post('/student-checkin', async (req, res) => {
       return res.status(401).json({ code: 'SIGNATURE_INVALID', error: 'Chữ ký không khớp với địa chỉ ví.' });
     }
 
-    // MSSV + họ tên lấy từ thông điệp ĐÃ KÝ, không lấy từ request
-    const { studentId, fullName } = challenge;
+    const { studentId, fullName, className } = challenge;
 
-    // ---- Tìm sự kiện + xác thực mã QR (TOTP) ----
     const found = await findEventByToken(eventId, token);
     if (found.error) {
       return res.status(found.status).json({ code: found.code, error: found.error });
@@ -458,7 +437,6 @@ router.post('/student-checkin', async (req, res) => {
       });
     }
 
-    // Một ví chỉ thuộc về một MSSV (kiểm tra trên mọi sự kiện)
     const walletOwner = await Attendance.findOne({ walletAddress, studentId: { $ne: studentId } });
     if (walletOwner) {
       return res.status(409).json({
@@ -467,7 +445,6 @@ router.post('/student-checkin', async (req, res) => {
       });
     }
 
-    // Một MSSV chỉ dùng một ví (kiểm tra trên mọi sự kiện)
     const idOwner = await Attendance.findOne({ studentId, walletAddress: { $ne: walletAddress } });
     if (idOwner) {
       return res.status(409).json({
@@ -476,17 +453,23 @@ router.post('/student-checkin', async (req, res) => {
       });
     }
 
-    // Họ tên phải khớp với lần điểm danh trước của MSSV này
-    const normalizeName = (n) => String(n || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+    const normalizeText = (n) => String(n || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
     const previous = await Attendance.findOne({ walletAddress, studentId });
-    if (previous && normalizeName(previous.fullName) !== normalizeName(fullName)) {
-      return res.status(409).json({
-        code: 'NAME_MISMATCH',
-        error: `Họ tên không khớp với thông tin đã đăng ký của MSSV ${studentId}.`
-      });
+    if (previous) {
+      if (normalizeText(previous.fullName) !== normalizeText(fullName)) {
+        return res.status(409).json({
+          code: 'NAME_MISMATCH',
+          error: `Họ tên không khớp với thông tin đã đăng ký của MSSV ${studentId}.`
+        });
+      }
+      if (previous.className && normalizeText(previous.className) !== normalizeText(className)) {
+        return res.status(409).json({
+          code: 'CLASS_MISMATCH',
+          error: `Lớp không khớp với thông tin đã đăng ký (${previous.className}) của MSSV ${studentId}.`
+        });
+      }
     }
 
-    // ---- Cấp vé dùng 1 lần cho bước ghi nhận ----
     cleanupExpired(tickets);
     const claimTicket = crypto.randomBytes(24).toString('hex');
     tickets.set(claimTicket, {
@@ -494,6 +477,7 @@ router.post('/student-checkin', async (req, res) => {
       walletAddress,
       studentId,
       fullName,
+      className,
       expiresAt: Date.now() + TICKET_TTL_MS
     });
 
@@ -511,20 +495,13 @@ router.post('/student-checkin', async (req, res) => {
   }
 });
 
-// ---------- Kiểm tra giao dịch claim có thật trên Sepolia ----------
 const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
 
-// Hỗ trợ cả ethers v6 (JsonRpcProvider) và v5 (providers.JsonRpcProvider)
 const makeProvider = () =>
   ethers.JsonRpcProvider
     ? new ethers.JsonRpcProvider(SEPOLIA_RPC_URL)
     : new ethers.providers.JsonRpcProvider(SEPOLIA_RPC_URL);
 
-/**
- * Đọc giao dịch từ Sepolia và kiểm tra: đã thành công, gọi đúng contract của nhóm,
- * và do đúng ví sinh viên gửi. Trả về null nếu hợp lệ, hoặc { status, code, error }.
- * Ném lỗi nếu không kết nối được RPC (caller xử lý riêng).
- */
 async function verifyClaimTx(txHash, walletAddress) {
   const contractAddress = String(process.env.CONTRACT_ADDRESS || '').toLowerCase();
   if (!contractAddress) {
@@ -534,7 +511,6 @@ async function verifyClaimTx(txHash, walletAddress) {
 
   const provider = makeProvider();
 
-  // RPC công khai có thể trễ vài giây so với MetaMask -> thử lại vài lần
   let receipt = null;
   for (let i = 0; i < 5 && !receipt; i++) {
     receipt = await provider.getTransactionReceipt(txHash);
@@ -559,15 +535,13 @@ async function verifyClaimTx(txHash, walletAddress) {
 /**
  * @route   POST /api/events/record-success
  * @body    { claimTicket, txHash }
- * @desc    Lưu vết vào MongoDB sau khi mint thành công.
- *          Ví / MSSV / sự kiện lấy từ vé đã xác thực, KHÔNG lấy từ client.
  */
 router.post('/record-success', async (req, res) => {
   try {
     const { claimTicket, txHash } = req.body || {};
 
     const ticket = typeof claimTicket === 'string' ? tickets.get(claimTicket) : null;
-    if (ticket) tickets.delete(claimTicket); // vé chỉ dùng 1 lần
+    if (ticket) tickets.delete(claimTicket);
     if (!ticket || ticket.expiresAt < Date.now()) {
       return res.status(401).json({
         code: 'TICKET_INVALID',
@@ -582,21 +556,19 @@ router.post('/record-success', async (req, res) => {
       return res.status(400).json({ code: 'INVALID_TX', error: 'txHash không hợp lệ (cần giao dịch thật trên Sepolia).' });
     }
 
-    const { eventId, walletAddress, studentId, fullName } = ticket;
+    const { eventId, walletAddress, studentId, fullName, className } = ticket;
 
-    // Mỗi giao dịch chỉ được dùng cho 1 lượt điểm danh
     const txUsed = await Attendance.findOne({ txHash });
     if (txUsed) {
       return res.status(409).json({ code: 'TX_ALREADY_USED', error: 'Giao dịch này đã được ghi nhận trước đó.' });
     }
 
-    // Xác minh giao dịch có thật trên Sepolia (đúng contract, đúng ví, thành công)
     let txError = null;
     try {
       txError = await verifyClaimTx(txHash, walletAddress);
     } catch (rpcErr) {
       console.error('[record-success] Lỗi RPC Sepolia:', rpcErr);
-      tickets.set(claimTicket, ticket); // trả lại vé để client thử lại, tránh mất dữ liệu
+      tickets.set(claimTicket, ticket);
       return res.status(502).json({ code: 'RPC_ERROR', error: 'Chưa kiểm tra được giao dịch trên Sepolia, vui lòng thử lại.' });
     }
     if (txError) {
@@ -608,7 +580,6 @@ router.post('/record-success', async (req, res) => {
       return res.status(404).json({ code: 'EVENT_NOT_FOUND', error: 'Không tìm thấy sự kiện.' });
     }
 
-    // Chống ghi trùng (bấm 2 lần / 2 tab cùng lúc)
     const existed = await Attendance.findOne({
       eventId: event._id,
       $or: [{ walletAddress }, { studentId }]
@@ -622,9 +593,18 @@ router.post('/record-success', async (req, res) => {
       walletAddress,
       studentId,
       fullName,
+      className,
       txHash
     });
     await newAttendance.save();
+
+    // Tự động bổ sung Lớp cho các bản ghi điểm danh cũ của cùng ví (nếu trước đó chưa có className)
+    if (className) {
+      await Attendance.updateMany(
+        { walletAddress, $or: [{ className: { $exists: false } }, { className: '' }, { className: null }] },
+        { $set: { className } }
+      );
+    }
 
     const updated = await Event.findByIdAndUpdate(
       event._id,
@@ -632,7 +612,6 @@ router.post('/record-success', async (req, res) => {
       { new: true }
     );
 
-    // [THÊM LOGIC]: Kiểm tra nếu số lượng sinh viên đã nhận bằng với sức chứa tối đa -> Đóng sự kiện
     if (updated.capacity > 0 && updated.currentAttendees >= updated.capacity) {
       await Event.findByIdAndUpdate(
         event._id,
