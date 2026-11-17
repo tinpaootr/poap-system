@@ -2,6 +2,11 @@
 
 import React from 'react';
 
+export interface OrganizerOption {
+  key: string;
+  label: string;
+}
+
 interface FilterToolbarProps {
   search: string;
   setSearch: (v: string) => void;
@@ -12,7 +17,15 @@ interface FilterToolbarProps {
   sort: string;
   setSort: (v: string) => void;
   totalVisible: number;
+  customOrganizers?: OrganizerOption[];
 }
+
+const DEFAULT_ORGANIZERS: OrganizerOption[] = [
+  { key: 'khoa-cntt', label: 'Khoa CNTT' },
+  { key: 'clb-tin-hoc', label: 'CLB Tin Học' },
+  { key: 'doan-thanh-nien', label: 'Đoàn Thanh Niên' },
+  { key: 'hoi-sinh-vien', label: 'Hội Sinh Viên' },
+];
 
 export default function FilterToolbar({
   search,
@@ -24,7 +37,22 @@ export default function FilterToolbar({
   sort,
   setSort,
   totalVisible,
+  customOrganizers = [],
 }: FilterToolbarProps) {
+  // Gộp 4 đơn vị mặc định với các đơn vị tự nhập mới (không trùng lặp)
+  const mergedOrganizers = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of DEFAULT_ORGANIZERS) {
+      map.set(item.key, item.label);
+    }
+    for (const item of customOrganizers) {
+      if (item.key && !map.has(item.key)) {
+        map.set(item.key, item.label);
+      }
+    }
+    return Array.from(map.entries()).map(([key, label]) => ({ key, label }));
+  }, [customOrganizers]);
+
   return (
     <section className="w-full flex flex-col gap-4">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -67,10 +95,11 @@ export default function FilterToolbar({
               className="appearance-none bg-[#131b2e] border border-[#222a3d] text-[#dae2fd] text-xs py-2 pl-3 pr-8 rounded-lg focus:outline-none cursor-pointer hover:bg-[#171f33] transition-colors"
             >
               <option value="all">Tất cả đơn vị / CLB</option>
-              <option value="khoa-cntt">Khoa CNTT</option>
-              <option value="clb-tin-hoc">CLB Tin Học</option>
-              <option value="doan-thanh-nien">Đoàn Thanh Niên</option>
-              <option value="hoi-sinh-vien">Hội Sinh Viên</option>
+              {mergedOrganizers.map((org) => (
+                <option key={org.key} value={org.key}>
+                  {org.label}
+                </option>
+              ))}
             </select>
             <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-[#c7c4d7]">
               expand_more
