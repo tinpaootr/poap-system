@@ -17,6 +17,7 @@ export interface Badge {
   walletAddress: string;
   studentId: string;
   fullName: string;
+  className?: string;
   claimedAt: string | null;
 
   txHash: string | null;
