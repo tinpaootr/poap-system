@@ -12,11 +12,11 @@ import { useCollection } from '@/hooks/useCollection';
 import { toBadgeItem } from '@/lib/collectionMapper';
 
 const BASE_STATS = {
-  fullName: 'Sinh viên',
-  cohort: 'Khoá 2021 - 2025',
-  studentId: '—',
-  major: 'Khoa Học Máy Tính',
-  rank: 'Hạng Vàng',
+  fullName: 'Sinh viên chưa điểm danh',
+  cohort: 'Khoá 2023 - 2027',
+  studentId: 'Chưa cập nhật',
+  major: 'Khoa Công Nghệ Thông Tin',
+  rank: 'Thành Viên Mới',
   avatarUrl:
     'https://lh3.googleusercontent.com/aida-public/AB6AXuD-i7Y8oMoGESPTlqKL8VkUHhlVtmI-gKqUpiE-f0L7zuNB8G_M5N6UT2oi8fgea_Z4s-d7BZdc4OjXL9ReyNj9wYex6hwRoY7_3w7FeN5i5wwu0EdbLRTZcB0FC928IrPNTdfhDpQ6qyAz9LRhMydNSRKcqWNBAo0gVGXzdQ-SrpMgUqX2YMI_xwgcqlbPRDvs0RiMhok8fqHP4F0P7qCyaP5L1NyzqxMz5JHJxyhZc6kHEkul2WD0_Q',
   totalEvents: 0,
@@ -25,6 +25,23 @@ const BASE_STATS = {
   activityPoints: 0,
   maxPoints: 100,
 };
+
+function getCohortFromStudentId(studentId?: string): string {
+  if (!studentId || studentId.length < 2) return BASE_STATS.cohort;
+  const prefix = parseInt(studentId.slice(0, 2), 10);
+  if (!Number.isNaN(prefix) && prefix >= 18 && prefix <= 30) {
+    const startYear = 2000 + prefix;
+    return `Khoá ${startYear} - ${startYear + 4}`;
+  }
+  return BASE_STATS.cohort;
+}
+
+function getRankFromPoints(points: number): string {
+  if (points >= 50) return 'Hạng Vàng';
+  if (points >= 20) return 'Hạng Bạc';
+  if (points >= 10) return 'Hạng Đồng';
+  return 'Thành Viên Mới';
+}
 
 export default function CollectionPage() {
   const [mounted, setMounted] = useState(false);
@@ -44,25 +61,27 @@ export default function CollectionPage() {
   const allBadges: BadgeItem[] = useMemo(() => apiBadges.map(toBadgeItem), [apiBadges]);
 
   const stats = useMemo(() => {
-    const latest = apiBadges[0]; // backend đã sort mới nhất trước
+    const latest = apiBadges[0];
     const badgeWithClass = apiBadges.find((b) => b.className && b.className.trim() !== '');
     const currentSemester = allBadges[0]?.semester;
+    const points = Math.min(
+      allBadges.reduce((sum, b) => sum + b.points, 0),
+      BASE_STATS.maxPoints
+    );
 
     return {
       ...BASE_STATS,
       fullName: latest?.fullName || BASE_STATS.fullName,
       studentId: latest?.studentId || BASE_STATS.studentId,
-      // Nếu có dữ liệu Lớp từ backend thì hiển thị "Lớp: ...", nếu chưa có mới dùng mặc định
+      cohort: getCohortFromStudentId(latest?.studentId),
       major: badgeWithClass?.className
         ? `Lớp: ${badgeWithClass.className}`
         : BASE_STATS.major,
+      rank: getRankFromPoints(points),
       totalEvents: allBadges.length,
       totalSoulbound: allBadges.length,
       semesterGain: allBadges.filter((b) => b.semester === currentSemester).length,
-      activityPoints: Math.min(
-        allBadges.reduce((sum, b) => sum + b.points, 0),
-        BASE_STATS.maxPoints
-      ),
+      activityPoints: points,
     };
   }, [apiBadges, allBadges]);
 
@@ -86,7 +105,7 @@ export default function CollectionPage() {
     if (typeof navigator !== 'undefined' && navigator.share) {
       navigator
         .share({
-          title: `${stats.fullName} - Portfolio Chứng Chỉ`,
+          title: `${stats.fullName} - Portfolio Chứng Chỉ Web3`,
           url: window.location.href,
         })
         .catch(() => {});
@@ -98,7 +117,7 @@ export default function CollectionPage() {
 
   if (!mounted) return null;
 
-  // Chặn toàn trang nếu chưa kết nối ví (giống trang Admin)
+  // Chặn toàn trang khi chưa kết nối ví (đồng bộ với trang Admin)
   if (!isConnected) {
     return (
       <main className="min-h-[calc(100vh-64px)] bg-[#0b0e17] flex items-center justify-center p-4">
@@ -126,7 +145,9 @@ export default function CollectionPage() {
     if (loading) {
       return (
         <div className="flex flex-col items-center justify-center p-12 text-center">
-          <span className="material-symbols-outlined text-[40px] text-[#c0c1ff] animate-spin select-none">progress_activity</span>
+          <span className="material-symbols-outlined text-[40px] text-[#c0c1ff] animate-spin select-none">
+            progress_activity
+          </span>
           <p className="text-sm text-[#c7c4d7] mt-3">Đang tải bộ sưu tập...</p>
         </div>
       );
@@ -135,7 +156,9 @@ export default function CollectionPage() {
     if (error) {
       return (
         <div className="flex flex-col items-center justify-center p-12 bg-[#131b2e]/50 rounded-xl text-center border border-[#222a3d]">
-          <span className="material-symbols-outlined text-[48px] text-[#ffb4ab] mb-2 select-none">error</span>
+          <span className="material-symbols-outlined text-[48px] text-[#ffb4ab] mb-2 select-none">
+            error
+          </span>
           <p className="text-lg font-semibold text-[#dae2fd]">Không tải được bộ sưu tập</p>
           <p className="text-xs text-[#c7c4d7] mt-1">{error}</p>
           <button
@@ -151,9 +174,13 @@ export default function CollectionPage() {
     if (allBadges.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center p-12 bg-[#131b2e]/50 rounded-xl text-center border border-[#222a3d]">
-          <span className="material-symbols-outlined text-[48px] text-[#908fa0] mb-2 select-none">workspace_premium</span>
+          <span className="material-symbols-outlined text-[48px] text-[#908fa0] mb-2 select-none">
+            workspace_premium
+          </span>
           <p className="text-lg font-semibold text-[#dae2fd]">Bạn chưa có huy hiệu nào</p>
-          <p className="text-xs text-[#c7c4d7] mt-1">Hãy tham gia sự kiện và quét mã QR tại trang Điểm danh để nhận huy hiệu đầu tiên.</p>
+          <p className="text-xs text-[#c7c4d7] mt-1">
+            Hãy tham gia sự kiện và quét mã QR tại trang Điểm danh để nhận huy hiệu đầu tiên.
+          </p>
         </div>
       );
     }
@@ -161,9 +188,13 @@ export default function CollectionPage() {
     if (filteredBadges.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center p-12 bg-[#131b2e]/50 rounded-xl text-center border border-[#222a3d]">
-          <span className="material-symbols-outlined text-[48px] text-[#908fa0] mb-2 select-none">search_off</span>
+          <span className="material-symbols-outlined text-[48px] text-[#908fa0] mb-2 select-none">
+            search_off
+          </span>
           <p className="text-lg font-semibold text-[#dae2fd]">Không tìm thấy huy hiệu phù hợp</p>
-          <p className="text-xs text-[#c7c4d7] mt-1">Vui lòng thử từ khóa khác hoặc xóa bộ lọc.</p>
+          <p className="text-xs text-[#c7c4d7] mt-1">
+            Vui lòng thử từ khóa khác hoặc xóa bộ lọc.
+          </p>
           <button
             onClick={() => {
               setSearch('');
@@ -211,8 +242,12 @@ export default function CollectionPage() {
           studentId={stats.studentId}
           onClose={() => setSelectedBadge(null)}
           onCopy={() => {
-            navigator.clipboard.writeText(window.location.href);
-            alert('Đã sao chép liên kết chứng thực Web3!');
+            const verifyUrl =
+              selectedBadge?.eventId && address
+                ? `${window.location.origin}/verify/${selectedBadge.eventId}/${address}`
+                : window.location.href;
+            navigator.clipboard.writeText(verifyUrl);
+            alert('Đã sao chép đường dẫn xác minh công khai vào clipboard!');
           }}
         />
       </div>
