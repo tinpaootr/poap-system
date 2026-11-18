@@ -17,8 +17,7 @@ const BASE_STATS = {
   studentId: 'Chưa cập nhật',
   major: 'Khoa Công Nghệ Thông Tin',
   rank: 'Thành Viên Mới',
-  avatarUrl:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuD-i7Y8oMoGESPTlqKL8VkUHhlVtmI-gKqUpiE-f0L7zuNB8G_M5N6UT2oi8fgea_Z4s-d7BZdc4OjXL9ReyNj9wYex6hwRoY7_3w7FeN5i5wwu0EdbLRTZcB0FC928IrPNTdfhDpQ6qyAz9LRhMydNSRKcqWNBAo0gVGXzdQ-SrpMgUqX2YMI_xwgcqlbPRDvs0RiMhok8fqHP4F0P7qCyaP5L1NyzqxMz5JHJxyhZc6kHEkul2WD0_Q',
+  avatarUrl: '',
   totalEvents: 0,
   semesterGain: 0,
   totalSoulbound: 0,
@@ -222,7 +221,7 @@ export default function CollectionPage() {
   return (
     <main className="w-full min-h-[calc(100vh-80px)] bg-[#0b1326] text-[#dae2fd] py-8 px-4 md:px-8">
       <div className="max-w-[1280px] mx-auto flex flex-col gap-8">
-        <StudentProfileHeader stats={stats} onShare={handleShare} />
+        <StudentProfileHeader stats={stats} walletAddress={address} onShare={handleShare} />
         <FilterToolbar
           search={search}
           setSearch={setSearch}
