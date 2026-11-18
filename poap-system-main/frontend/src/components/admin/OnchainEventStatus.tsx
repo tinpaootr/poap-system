@@ -11,7 +11,10 @@ import { sepolia } from "wagmi/chains";
 import { usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import contractABI from "@/lib/contractABI.json";
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "") as `0x${string}`;
+// Địa chỉ contract là thông tin công khai -> có giá trị mặc định,
+// để host thiếu biến môi trường vẫn hoạt động.
+const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  "0x5D25Ebe07d284e27E63319F760543F2EBF859643") as `0x${string}`;
 
 interface Props {
   eventId: string;
@@ -34,7 +37,16 @@ export default function OnchainEventStatus({ eventId, capacity }: Props) {
     query: { enabled: validContract && !!eventId },
   });
 
-  if (!validContract || isLoading) return null;
+  if (!validContract) {
+    return (
+      <span className="text-[10px] text-amber-400">
+        Thiếu địa chỉ contract (NEXT_PUBLIC_CONTRACT_ADDRESS)
+      </span>
+    );
+  }
+  if (isLoading) {
+    return <span className="text-[10px] text-slate-500">Đang kiểm tra on-chain...</span>;
+  }
   if (isError) {
     return <span className="text-[10px] text-slate-500">Không đọc được trạng thái on-chain</span>;
   }

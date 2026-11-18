@@ -15,6 +15,9 @@ export interface BadgeItem {
   timestamp: string;
   txHash: string;
   svgInner: string;
+  eventId?: string;
+  etherscanUrl?: string | null;
+  contractAddress?: string | null;
 }
 
 export default function BadgeCard({

@@ -22,7 +22,8 @@ interface CreateEventFormProps {
 const DEFAULT_BADGE_PREVIEW =
   "https://images.unsplash.com/photo-1642104704074-907c0698cbd9?w=400&auto=format&fit=crop&q=80";
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  "0x5D25Ebe07d284e27E63319F760543F2EBF859643") as `0x${string}`;
 
 const ORGANIZER_OPTIONS = [
   "Khoa CNTT",
