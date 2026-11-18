@@ -80,8 +80,9 @@ export function toBadgeItem(b: Badge, index: number): BadgeItem {
   };
 
   // etherscanUrl / contractAddress là trường bổ sung (xem hướng dẫn thêm vào BadgeItem)
-  return {
+    return {
     ...base,
+    eventId: b.eventId != null ? String(b.eventId) : undefined,
     etherscanUrl: b.etherscanTxUrl,
     contractAddress: b.contractAddress,
   } as BadgeItem;

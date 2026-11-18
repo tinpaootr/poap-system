@@ -12,7 +12,8 @@ import { isAddress, isAddressEqual, parseAbi, parseEventLogs } from 'viem';
 import { sepolia } from 'wagmi/chains';
 import { useReadContract, useWaitForTransactionReceipt } from 'wagmi';
 
-export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '') as `0x${string}`;
+export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  '0x5D25Ebe07d284e27E63319F760543F2EBF859643') as `0x${string}`;
 export const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
 const verifyAbi = parseAbi([
