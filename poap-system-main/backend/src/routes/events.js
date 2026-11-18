@@ -9,6 +9,15 @@ const Event = require('../models/Event');
 
 // ===== [BỔ SUNG CHO PHẦN SINH VIÊN] Import Attendance Model =====
 const Attendance = require('../models/Attendance');
+const {
+  MintError,
+  translateError,
+  getOnchainStatus,
+  sendMint,
+  tokenIdFromReceipt,
+  findClaimTx,
+  waitTimeoutMs
+} = require('../lib/minter');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
@@ -235,9 +244,11 @@ const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const TICKET_TTL_MS = 10 * 60 * 1000;
 const challenges = new Map(); // wallet -> { message, studentId, fullName, className, expiresAt }
-const tickets = new Map();    // ticketId -> { eventId, walletAddress, studentId, fullName, className, expiresAt }
+
+// Ví / MSSV đang trong lúc đúc huy hiệu -> chặn 2 request song song cho cùng một người
+const inFlight = new Set();
+const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx';
 
 const cleanupExpired = (map) => {
   const now = Date.now();
@@ -384,6 +395,15 @@ router.post('/student-challenge', async (req, res) => {
 /**
  * @route   POST /api/events/student-checkin
  * @body    { eventId?, qrToken, walletAddress, signature }
+ * @desc    Kiểm tra chữ ký + nonce, mã TOTP, sự kiện, chống trùng, ràng buộc ví - MSSV, khớp họ tên/lớp.
+ *          Qua hết -> backend gọi ClubPOAP.mintBadge() bằng ví minter (trả gas thay sinh viên),
+ *          chờ xác nhận rồi lưu Attendance kèm txHash.
+ * @returns 201 { success, txHash, tokenId, etherscanUrl, event }      đúc thành công
+ *          200 { success, txHash, ... }                                 đối soát: chain đã có, ghi bù DB
+ *          202 { pending, code: 'MINT_PENDING', txHash }                đã gửi tx nhưng xác nhận chậm
+ *          4xx/5xx { code, error }  với code: EVENT_NOT_ONCHAIN, ALREADY_CLAIMED_ONCHAIN, EVENT_FULL,
+ *          CHECKIN_IN_PROGRESS, MINTER_NO_FUNDS, MINTER_NOT_ADMIN, MINTER_NOT_CONFIGURED,
+ *          MINT_REVERTED, RPC_ERROR, DB_SAVE_FAILED, ... (cùng các mã kiểm tra cũ)
  */
 router.post('/student-checkin', async (req, res) => {
   try {
@@ -470,165 +490,188 @@ router.post('/student-checkin', async (req, res) => {
       }
     }
 
-    cleanupExpired(tickets);
-    const claimTicket = crypto.randomBytes(24).toString('hex');
-    tickets.set(claimTicket, {
-      eventId: String(event._id),
-      walletAddress,
-      studentId,
-      fullName,
-      className,
-      expiresAt: Date.now() + TICKET_TTL_MS
-    });
+    // ===== Qua hết bước kiểm tra -> BACKEND ĐÚC HUY HIỆU HỘ SINH VIÊN (ví minter trả gas) =====
+    const lockKeys = [`w:${walletAddress}`, `s:${studentId}`];
+    if (lockKeys.some((k) => inFlight.has(k))) {
+      return res.status(409).json({
+        code: 'CHECKIN_IN_PROGRESS',
+        error: 'Yêu cầu nhận huy hiệu của bạn đang được xử lý, vui lòng chờ trong giây lát.'
+      });
+    }
+    lockKeys.forEach((k) => inFlight.add(k));
+    let releaseInBackground = false;
 
-    return res.status(200).json({
-      success: true,
-      message: 'Xác thực hợp lệ!',
-      eventId: event._id,
-      tokenURI: event.ipfsMetadataHash || event.ipfsImageHash,
-      event: toPublicEvent(event),
-      claimTicket
-    });
+    try {
+      const eventKey = String(event._id); // eventId on-chain = _id MongoDB (string)
+      const tokenURI = event.ipfsMetadataHash || event.ipfsImageHash;
+      if (!tokenURI) {
+        throw new MintError('NO_TOKEN_URI', 'Sự kiện chưa có metadata huy hiệu (IPFS). Vui lòng liên hệ ban tổ chức.', 500);
+      }
+      const studentData = { event, walletAddress, studentId, fullName, className };
+
+      // a. Kiểm tra trạng thái on-chain trước khi tốn gas
+      const onchain = await getOnchainStatus(eventKey, walletAddress);
+      if (!onchain.exists) {
+        throw new MintError(
+          'EVENT_NOT_ONCHAIN',
+          'Sự kiện chưa được đăng ký trên blockchain. Vui lòng liên hệ ban tổ chức.',
+          409
+        );
+      }
+
+      // b. Chain đã có huy hiệu nhưng DB chưa ghi (lần trước bị gián đoạn) -> đối soát, ghi bù DB
+      if (onchain.claimed) {
+        let found = null;
+        try {
+          found = await findClaimTx(eventKey, walletAddress);
+        } catch (lookupErr) {
+          console.warn('[mint] Không tìm lại được giao dịch cũ:', lookupErr.message);
+        }
+        if (!found) {
+          throw new MintError(
+            'ALREADY_CLAIMED_ONCHAIN',
+            'Ví này đã nhận huy hiệu của sự kiện trên blockchain nhưng hệ thống chưa đồng bộ được. Vui lòng liên hệ ban tổ chức.',
+            409
+          );
+        }
+        console.log(`[mint] Đối soát: ví ${walletAddress} đã có huy hiệu (tx ${found.txHash}), ghi bù vào DB.`);
+        const saved = await saveAttendance({ ...studentData, txHash: found.txHash });
+        return res.status(200).json(mintSuccessBody(saved, found.txHash, found.tokenId));
+      }
+
+      if (onchain.currentAttendees >= onchain.capacity) {
+        throw new MintError('EVENT_FULL', 'Sự kiện đã đủ số lượng người tham dự.', 400);
+      }
+
+      // c. Gửi giao dịch mintBadge(student, eventId, uri) bằng ví minter
+      const tx = await sendMint(walletAddress, eventKey, tokenURI);
+      console.log(`[mint] Đã gửi tx ${tx.hash} -> ví ${walletAddress}, sự kiện ${eventKey}`);
+
+      // d. Chờ Sepolia xác nhận
+      let receipt;
+      try {
+        receipt = await tx.wait(1, waitTimeoutMs());
+      } catch (waitErr) {
+        if (waitErr?.code === 'TIMEOUT') {
+          // Giao dịch đã gửi nhưng xác nhận chậm: tiếp tục chờ ở nền rồi tự ghi DB
+          releaseInBackground = true;
+          finishMintInBackground(tx, studentData, lockKeys);
+          return res.status(202).json({
+            success: false,
+            pending: true,
+            code: 'MINT_PENDING',
+            error: 'Giao dịch đã được gửi nhưng mạng Sepolia xác nhận chậm. Huy hiệu sẽ tự xuất hiện trong Bộ sưu tập sau ít phút.',
+            txHash: tx.hash,
+            etherscanUrl: `${ETHERSCAN_TX}/${tx.hash}`
+          });
+        }
+        throw translateError(waitErr);
+      }
+
+      // e. Ghi Attendance kèm txHash
+      let saved;
+      try {
+        saved = await saveAttendance({ ...studentData, txHash: tx.hash });
+      } catch (dbErr) {
+        console.error(`[mint] ⚠️ ĐÃ MINT nhưng lưu DB lỗi. tx=${tx.hash} ví=${walletAddress} sự kiện=${eventKey}`, dbErr);
+        throw new MintError(
+          'DB_SAVE_FAILED',
+          'Huy hiệu đã được đúc trên blockchain nhưng chưa lưu được lịch sử điểm danh. Hãy bấm "Nhận Huy Hiệu" lại để hệ thống đồng bộ.',
+          500,
+          { txHash: tx.hash, etherscanUrl: `${ETHERSCAN_TX}/${tx.hash}` }
+        );
+      }
+
+      return res.status(201).json(mintSuccessBody(saved, tx.hash, tokenIdFromReceipt(receipt)));
+    } finally {
+      if (!releaseInBackground) lockKeys.forEach((k) => inFlight.delete(k));
+    }
   } catch (err) {
+    if (err instanceof MintError) {
+      console.warn(`[student-checkin] ${err.code}: ${err.message}`);
+      return res.status(err.status).json({ code: err.code, error: err.message, ...err.extra });
+    }
     console.error('SERVER ERROR:', err);
     res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi server khi điểm danh.' });
   }
 });
 
-const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
-
-const makeProvider = () =>
-  ethers.JsonRpcProvider
-    ? new ethers.JsonRpcProvider(SEPOLIA_RPC_URL)
-    : new ethers.providers.JsonRpcProvider(SEPOLIA_RPC_URL);
-
-async function verifyClaimTx(txHash, walletAddress) {
-  const contractAddress = String(process.env.CONTRACT_ADDRESS || '').toLowerCase();
-  if (!contractAddress) {
-    console.warn('[record-success] Thiếu CONTRACT_ADDRESS trong .env -> bỏ qua kiểm tra on-chain');
-    return null;
-  }
-
-  const provider = makeProvider();
-
-  let receipt = null;
-  for (let i = 0; i < 5 && !receipt; i++) {
-    receipt = await provider.getTransactionReceipt(txHash);
-    if (!receipt) await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  if (!receipt) {
-    return { status: 400, code: 'TX_NOT_FOUND', error: 'Không tìm thấy giao dịch này trên Sepolia.' };
-  }
-  if (receipt.status !== 1) {
-    return { status: 400, code: 'TX_FAILED', error: 'Giao dịch trên Sepolia đã thất bại (reverted).' };
-  }
-  if (String(receipt.to || '').toLowerCase() !== contractAddress) {
-    return { status: 400, code: 'TX_WRONG_CONTRACT', error: 'Giao dịch không gọi đúng smart contract của hệ thống.' };
-  }
-  if (String(receipt.from || '').toLowerCase() !== walletAddress) {
-    return { status: 400, code: 'TX_WRONG_SENDER', error: 'Giao dịch không do ví điểm danh gửi.' };
-  }
-  return null;
-}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * @route   POST /api/events/record-success
- * @body    { claimTicket, txHash }
+ * Lưu lịch sử điểm danh sau khi mint thành công (có thử lại).
+ * Trả về document Event sau khi cập nhật số người tham dự.
  */
-router.post('/record-success', async (req, res) => {
-  try {
-    const { claimTicket, txHash } = req.body || {};
-
-    const ticket = typeof claimTicket === 'string' ? tickets.get(claimTicket) : null;
-    if (ticket) tickets.delete(claimTicket);
-    if (!ticket || ticket.expiresAt < Date.now()) {
-      return res.status(401).json({
-        code: 'TICKET_INVALID',
-        error: 'Phiên điểm danh không hợp lệ hoặc đã hết hạn. Vui lòng quét mã lại.'
-      });
-    }
-
-    if (!txHash || typeof txHash !== 'string' || txHash.length > 100) {
-      return res.status(400).json({ code: 'INVALID_TX', error: 'Thiếu mã giao dịch (txHash).' });
-    }
-    if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
-      return res.status(400).json({ code: 'INVALID_TX', error: 'txHash không hợp lệ (cần giao dịch thật trên Sepolia).' });
-    }
-
-    const { eventId, walletAddress, studentId, fullName, className } = ticket;
-
-    const txUsed = await Attendance.findOne({ txHash });
-    if (txUsed) {
-      return res.status(409).json({ code: 'TX_ALREADY_USED', error: 'Giao dịch này đã được ghi nhận trước đó.' });
-    }
-
-    let txError = null;
+async function saveAttendance({ event, walletAddress, studentId, fullName, className, txHash }) {
+  // 1. Tạo bản ghi Attendance (index unique eventId + walletAddress chống ghi trùng)
+  let inserted = false;
+  for (let attempt = 1; attempt <= 3 && !inserted; attempt++) {
     try {
-      txError = await verifyClaimTx(txHash, walletAddress);
-    } catch (rpcErr) {
-      console.error('[record-success] Lỗi RPC Sepolia:', rpcErr);
-      tickets.set(claimTicket, ticket);
-      return res.status(502).json({ code: 'RPC_ERROR', error: 'Chưa kiểm tra được giao dịch trên Sepolia, vui lòng thử lại.' });
+      const existed = await Attendance.findOne({ eventId: event._id, walletAddress });
+      if (existed) {
+        if (!existed.txHash) {
+          existed.txHash = txHash;
+          await existed.save();
+        }
+        return Event.findById(event._id);
+      }
+      await new Attendance({ eventId: event._id, walletAddress, studentId, fullName, className, txHash }).save();
+      inserted = true;
+    } catch (err) {
+      if (err?.code === 11000) return Event.findById(event._id); // request khác vừa ghi xong
+      console.error(`[mint] Lưu Attendance lỗi (lần ${attempt}/3), tx=${txHash}:`, err.message);
+      if (attempt === 3) throw err;
+      await sleep(1000 * attempt);
     }
-    if (txError) {
-      return res.status(txError.status).json({ code: txError.code, error: txError.error });
-    }
-
-    const event = await Event.findById(eventId);
-    if (!event) {
-      return res.status(404).json({ code: 'EVENT_NOT_FOUND', error: 'Không tìm thấy sự kiện.' });
-    }
-
-    const existed = await Attendance.findOne({
-      eventId: event._id,
-      $or: [{ walletAddress }, { studentId }]
-    });
-    if (existed) {
-      return res.status(409).json({ code: 'ALREADY_CLAIMED', error: 'Lượt điểm danh này đã được ghi nhận trước đó.' });
-    }
-
-    const newAttendance = new Attendance({
-      eventId: event._id,
-      walletAddress,
-      studentId,
-      fullName,
-      className,
-      txHash
-    });
-    await newAttendance.save();
-
-    // Tự động bổ sung Lớp cho các bản ghi điểm danh cũ của cùng ví (nếu trước đó chưa có className)
-    if (className) {
-      await Attendance.updateMany(
-        { walletAddress, $or: [{ className: { $exists: false } }, { className: '' }, { className: null }] },
-        { $set: { className } }
-      );
-    }
-
-    const updated = await Event.findByIdAndUpdate(
-      event._id,
-      { $inc: { currentAttendees: 1 } },
-      { new: true }
-    );
-
-    if (updated.capacity > 0 && updated.currentAttendees >= updated.capacity) {
-      await Event.findByIdAndUpdate(
-        event._id,
-        { status: 'closed' }
-      );
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Đã ghi nhận lịch sử điểm danh thành công!',
-      currentAttendees: updated.currentAttendees
-    });
-  } catch (err) {
-    console.error('Error recording success:', err);
-    res.status(500).json({ code: 'SERVER_ERROR', error: 'Lỗi ghi nhận lịch sử điểm danh.' });
   }
-});
+
+  // 2. Tự động bổ sung Lớp cho các bản ghi điểm danh cũ của cùng ví (nếu trước đó chưa có className)
+  if (className) {
+    await Attendance.updateMany(
+      { walletAddress, $or: [{ className: { $exists: false } }, { className: '' }, { className: null }] },
+      { $set: { className } }
+    ).catch((err) => console.warn('[mint] Không bổ sung được lớp cho bản ghi cũ:', err.message));
+  }
+
+  // 3. Tăng số người tham dự, đủ chỗ thì đóng sự kiện
+  const updated = await Event.findByIdAndUpdate(
+    event._id,
+    { $inc: { currentAttendees: 1 } },
+    { returnDocument: 'after' }
+  );
+  if (updated && updated.capacity > 0 && updated.currentAttendees >= updated.capacity && updated.status !== 'closed') {
+    updated.status = 'closed';
+    await updated.save();
+  }
+  return updated;
+}
+
+function mintSuccessBody(eventDoc, txHash, tokenId) {
+  return {
+    success: true,
+    message: 'Điểm danh thành công! Huy hiệu đã được đúc về ví của bạn.',
+    eventId: eventDoc?._id,
+    txHash,
+    tokenId: tokenId || null,
+    etherscanUrl: `${ETHERSCAN_TX}/${txHash}`,
+    event: eventDoc ? toPublicEvent(eventDoc) : null,
+    currentAttendees: eventDoc?.currentAttendees
+  };
+}
+
+/** Giao dịch xác nhận chậm: chờ tiếp ở nền rồi ghi DB. Nếu lỗi, lần điểm danh sau sẽ tự đối soát. */
+function finishMintInBackground(tx, studentData, lockKeys) {
+  tx.wait(1, 10 * 60 * 1000)
+    .then(async () => {
+      await saveAttendance({ ...studentData, txHash: tx.hash });
+      console.log(`[mint] (nền) tx ${tx.hash} đã xác nhận và được ghi vào DB.`);
+    })
+    .catch((err) => console.error(`[mint] (nền) tx ${tx.hash} chưa hoàn tất:`, err.message))
+    .finally(() => lockKeys.forEach((k) => inFlight.delete(k)));
+}
+
+// Route POST /record-success và claimTicket đã được GỠ BỎ:
+// sinh viên không còn tự gửi giao dịch, backend mint hộ ngay trong /student-checkin.
 
 // ==========================================
 // API LẤY DANH SÁCH SINH VIÊN ĐÃ ĐIỂM DANH THEO SỰ KIỆN (CHO ADMIN)

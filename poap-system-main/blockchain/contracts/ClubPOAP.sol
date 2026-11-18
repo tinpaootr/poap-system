@@ -20,7 +20,8 @@ contract ClubPOAP is ERC721URIStorage, Ownable, IERC5192 {
         bool exists;
     }
 
-    // Danh sách ví Ban Tổ Chức (Admin) được quyền tạo sự kiện
+    // Danh sách ví Ban Tổ Chức (Admin) được quyền tạo sự kiện và đúc huy hiệu.
+    // Ví minter của backend cũng phải được cấp quyền này qua setAdmin().
     mapping(address => bool) public isAdmin;
 
     // Lưu thông tin sự kiện theo MongoDB _id (eventId)
@@ -46,10 +47,11 @@ contract ClubPOAP is ERC721URIStorage, Ownable, IERC5192 {
     }
 
     constructor() ERC721("Club POAP Soulbound Badge", "CPOAP") Ownable(msg.sender) {
-        // Cấp quyền mặc định cho người deploy và 2 ví Admin trong admin/page.tsx
+        // Cấp quyền mặc định cho người deploy và các ví Admin trong admin/page.tsx
         isAdmin[msg.sender] = true;
         isAdmin[0x4da3b2e88A9930907b1F94922b648EE289235656] = true; // Ví Tuyền
         isAdmin[0xfaA155cD28F66C84eb186dAc13FaF8c095Cf1Fd9] = true; // Ví Trâm
+        isAdmin[0x19F6f7e08644cbA7E9545666DCc0A2B42cd4e427] = true; // Ví Kiệt
     }
 
     /// @notice Thêm hoặc gỡ quyền Admin cho ví khác nếu cần
@@ -57,7 +59,7 @@ contract ClubPOAP is ERC721URIStorage, Ownable, IERC5192 {
         isAdmin[_admin] = _status;
     }
 
-    /// @notice 1. Admin đăng ký sự kiện lên Blockchain (hoặc tùy chọn tự động tạo khi claim)
+    /// @notice 1. Admin đăng ký sự kiện lên Blockchain (bắt buộc trước khi mint huy hiệu)
     function createEvent(string memory _eventId, uint256 _capacity) external onlyAdmin {
         require(bytes(_eventId).length > 0, "ClubPOAP: Thieu eventId");
         require(_capacity > 0, "ClubPOAP: So luong phai > 0");
@@ -72,40 +74,35 @@ contract ClubPOAP is ERC721URIStorage, Ownable, IERC5192 {
         emit EventCreated(_eventId, _capacity, msg.sender);
     }
 
-    /// @notice 2. Sinh viên gọi hàm này để đúc (Mint) Soulbound NFT về ví
-    function claimBadge(string memory _eventId, string memory _tokenURI) external returns (uint256) {
+    /// @notice 2. Backend (ví minter có quyền Admin) đúc Soulbound NFT thẳng về ví sinh viên.
+    ///         Sinh viên không cần gửi giao dịch, không trả gas; backend đã kiểm tra điểm danh trước.
+    function mintBadge(
+        address _student,
+        string memory _eventId,
+        string memory _tokenURI
+    ) external onlyAdmin returns (uint256) {
+        require(_student != address(0), "ClubPOAP: Vi sinh vien khong hop le");
         require(bytes(_eventId).length > 0, "ClubPOAP: Thieu eventId");
         require(bytes(_tokenURI).length > 0, "ClubPOAP: Thieu tokenURI");
-        require(!claimed[_eventId][msg.sender], "ClubPOAP: Vi nay da nhan huy hieu su kien nay");
 
-        // Nếu sự kiện đã được Admin đăng ký on-chain trước thì kiểm tra giới hạn capacity
-        if (events[_eventId].exists) {
-            require(
-                events[_eventId].currentAttendees < events[_eventId].capacity,
-                "ClubPOAP: Su kien da du so luong tham du"
-            );
-            events[_eventId].currentAttendees += 1;
-        } else {
-            // Fallback an toàn: Nếu sự kiện tạo ở MongoDB từ trước khi deploy contract,
-            // vẫn cho phép mint và tự khởi tạo bản ghi on-chain để demo không bị lỗi revert
-            events[_eventId] = EventInfo({
-                capacity: 1000,
-                currentAttendees: 1,
-                exists: true
-            });
-        }
+        EventInfo storage info = events[_eventId];
+        require(info.exists, "ClubPOAP: Su kien chua dang ky on-chain");
+        require(!claimed[_eventId][_student], "ClubPOAP: Vi nay da nhan huy hieu su kien nay");
+        require(info.currentAttendees < info.capacity, "ClubPOAP: Su kien da du so luong tham du");
 
-        claimed[_eventId][msg.sender] = true;
+        // Cập nhật trạng thái trước khi _safeMint (gọi ra ngoài) để chống reentrancy
+        info.currentAttendees += 1;
+        claimed[_eventId][_student] = true;
 
         uint256 tokenId = _nextTokenId++;
-        _safeMint(msg.sender, tokenId);
-        _setTokenURI(tokenId, _tokenURI);
+        studentTokenId[_eventId][_student] = tokenId;
 
-        studentTokenId[_eventId][msg.sender] = tokenId;
+        _safeMint(_student, tokenId);
+        _setTokenURI(tokenId, _tokenURI);
 
         // Phát sự kiện khóa Soulbound chuẩn ERC-5192
         emit Locked(tokenId);
-        emit BadgeClaimed(_eventId, msg.sender, tokenId, _tokenURI);
+        emit BadgeClaimed(_eventId, _student, tokenId, _tokenURI);
 
         return tokenId;
     }

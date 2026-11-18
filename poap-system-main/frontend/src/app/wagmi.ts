@@ -3,7 +3,7 @@ import { polygonAmoy, sepolia } from 'wagmi/chains';
 import { metaMask, injected } from 'wagmi/connectors';
 
 export const config = createConfig({
-  chains: [polygonAmoy, sepolia],
+  chains: [sepolia, polygonAmoy],
   connectors: [
     metaMask({
       dappMetadata: {
@@ -14,7 +14,7 @@ export const config = createConfig({
     injected(),
   ],
   transports: {
-    [polygonAmoy.id]: http(),
     [sepolia.id]: http(),
+    [polygonAmoy.id]: http(),
   },
 });

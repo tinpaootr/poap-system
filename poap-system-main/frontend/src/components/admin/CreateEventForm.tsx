@@ -9,6 +9,7 @@ import {
   UploadCloud,
   CheckCircle2,
   Building2,
+  RotateCcw,
 } from "lucide-react";
 import { useWriteContract } from "wagmi";
 import contractABI from "@/lib/contractABI.json";
@@ -33,6 +34,9 @@ const ORGANIZER_OPTIONS = [
 export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps) {
   const [title, setTitle] = useState("");
   const [organizer, setOrganizer] = useState("Khoa CNTT");
+  const [isCustomOrganizer, setIsCustomOrganizer] = useState(false);
+  const [customOrganizer, setCustomOrganizer] = useState("");
+
   const [datetime, setDatetime] = useState("");
   const [maxAttendees, setMaxAttendees] = useState<number | "">(150);
   const [refreshInterval, setRefreshInterval] = useState<number>(30);
@@ -54,16 +58,31 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
     }
   };
 
+  const handleOrganizerSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === "__custom__") {
+      setIsCustomOrganizer(true);
+      setCustomOrganizer("");
+    } else {
+      setIsCustomOrganizer(false);
+      setOrganizer(val);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !datetime.trim() || !file) {
-      alert("Vui lòng nhập đủ thông tin và chọn ảnh huy hiệu!");
+    const finalOrganizer = isCustomOrganizer
+      ? customOrganizer.trim()
+      : organizer.trim();
+
+    if (!title.trim() || !datetime.trim() || !file || !finalOrganizer) {
+      alert("Vui lòng nhập đủ thông tin, đơn vị tổ chức và chọn ảnh huy hiệu!");
       return;
     }
 
     const formData = new FormData();
     formData.append("name", title.trim());
-    formData.append("organizer", organizer);
+    formData.append("organizer", finalOrganizer);
     formData.append("time", datetime.trim());
     formData.append("capacity", maxAttendees.toString());
     formData.append("refreshInterval", refreshInterval.toString());
@@ -104,6 +123,8 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
 
         setTitle("");
         setOrganizer("Khoa CNTT");
+        setIsCustomOrganizer(false);
+        setCustomOrganizer("");
         setDatetime("");
         setMaxAttendees(150);
         setRefreshInterval(30);
@@ -163,21 +184,50 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
             <label className="text-sm font-medium text-slate-200">
               Đơn vị tổ chức <span className="text-rose-400">*</span>
             </label>
-            <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-3">
-              <Building2 className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
-              <select
-                value={organizer}
-                onChange={(e) => setOrganizer(e.target.value)}
-                disabled={isBusy}
-                className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50"
-              >
-                {ORGANIZER_OPTIONS.map((org) => (
-                  <option key={org} value={org}>
-                    {org}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isCustomOrganizer ? (
+              <div className="flex items-center bg-[#0b1326] border border-indigo-500/60 rounded-xl px-3 py-2.5">
+                <Building2 className="w-4 h-4 text-indigo-400 mr-2 shrink-0" />
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  maxLength={60}
+                  placeholder="Nhập tên đơn vị / CLB..."
+                  value={customOrganizer}
+                  onChange={(e) => setCustomOrganizer(e.target.value)}
+                  disabled={isBusy}
+                  className="bg-transparent text-white placeholder:text-slate-500 text-sm w-full focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomOrganizer(false);
+                    setCustomOrganizer("");
+                  }}
+                  title="Quay lại danh sách mặc định"
+                  className="ml-1.5 p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center bg-[#0b1326] border border-slate-800 rounded-xl px-3.5 py-3">
+                <Building2 className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+                <select
+                  value={organizer}
+                  onChange={handleOrganizerSelectChange}
+                  disabled={isBusy}
+                  className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50 cursor-pointer"
+                >
+                  {ORGANIZER_OPTIONS.map((org) => (
+                    <option key={org} value={org}>
+                      {org}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Khác (Tự nhập đơn vị...)</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -229,7 +279,7 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
                 value={refreshInterval}
                 onChange={(e) => setRefreshInterval(Number(e.target.value))}
                 disabled={isBusy}
-                className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50"
+                className="bg-[#0b1326] text-white text-sm w-full focus:outline-none disabled:opacity-50 cursor-pointer"
               >
                 <option value={30}>30 Giây</option>
                 <option value={45}>45 Giây</option>
@@ -277,7 +327,7 @@ export default function CreateEventForm({ onCreateEvent }: CreateEventFormProps)
           <button
             type="submit"
             disabled={isBusy}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm transition ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm transition cursor-pointer ${
               isBusy ? "bg-slate-700 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500"
             }`}
           >

@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const eventRoutes = require('./routes/events');
 const collectionRoutes = require('./routes/collection'); // <-- THÊM: Người 3 - Bộ sưu tập
+const { logMinterStatus } = require('./lib/minter');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,4 +37,6 @@ app.use('/api/collection', collectionRoutes);                // <-- THÊM
 // 4. KHỞI CHẠY SERVER
 app.listen(PORT, () => {
   console.log(`🚀 Backend Server đang chạy tại http://localhost:${PORT}`);
+  // Kiểm tra ví minter (số dư, quyền Admin) để phát hiện sớm lỗi cấu hình mint hộ
+  logMinterStatus();
 });

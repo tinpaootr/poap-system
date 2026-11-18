@@ -15,6 +15,7 @@ import {
   Eye,
 } from "lucide-react";
 import { ClubEvent, EventStatus } from "./types";
+import OnchainEventStatus from "./OnchainEventStatus";
 
 interface EventTableProps {
   events: ClubEvent[];
@@ -233,6 +234,9 @@ export default function EventTable({
                             ID: {ev._id} • Contract:{" "}
                             {ev.contractAddress || "Chưa triển khai"}
                           </span>
+                          <div className="mt-1">
+                            <OnchainEventStatus eventId={ev._id} capacity={ev.capacity} />
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -284,7 +288,7 @@ export default function EventTable({
                           <>
                             <button
                               onClick={() => onSelectForQr(ev, true)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition"
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
                             >
                               <QrCode className="w-3.5 h-3.5" />
                               <span>Trình chiếu</span>
@@ -292,7 +296,7 @@ export default function EventTable({
                             <button
                               onClick={() => onUpdateStatus(ev._id, "closed")}
                               title="Kết thúc điểm danh"
-                              className="p-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg transition"
+                              className="p-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg transition cursor-pointer"
                             >
                               <StopCircle className="w-4 h-4" />
                             </button>
@@ -305,7 +309,7 @@ export default function EventTable({
                               onUpdateStatus(ev._id, "open");
                               onSelectForQr({ ...ev, status: "open" }, false);
                             }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-semibold transition"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-semibold transition cursor-pointer"
                           >
                             <Play className="w-3.5 h-3.5" />
                             <span>Mở điểm danh</span>
@@ -315,8 +319,12 @@ export default function EventTable({
                         {(ev.status === "closed" || isFull) && (
                           isFull ? (
                             <button
-                              onClick={() => onSelectForQr(ev, false)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+                              onClick={() => {
+                                onSelectForQr(ev, false);
+                                handleOpenAttendeeModal(ev);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 hover:bg-indigo-500/20 hover:border-indigo-500/40 border border-slate-700/60 text-slate-200 rounded-lg text-xs font-medium transition cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5 text-indigo-400" />
                               <span>Xem trạng thái</span>
@@ -327,7 +335,7 @@ export default function EventTable({
                                 onUpdateStatus(ev._id, "open");
                                 onSelectForQr({ ...ev, status: "open" }, false);
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition cursor-pointer"
                             >
                               Mở lại QR
                             </button>
