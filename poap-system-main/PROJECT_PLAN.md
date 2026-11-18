@@ -183,7 +183,7 @@ C. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân):
 
 A. Đã hoàn thành (Người 1 - Tuyen - Smart Contract & Blockchain):
 
-[x] Triển khai Smart Contract ERC-5192 (ClubPOAP.sol): Viết hợp đồng Soulbound NFT (khóa chuyển nhượng vĩnh viễn) bằng OpenZeppelin v5, deploy lên Sepolia Testnet (0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13) và tích hợp hàm createEvent vào CreateEventForm.tsx.
+[x] Triển khai Smart Contract ERC-5192 (ClubPOAP.sol): Viết hợp đồng Soulbound NFT (khóa chuyển nhượng vĩnh viễn) bằng OpenZeppelin v5, deploy lên Sepolia Testnet (0x5D25Ebe07d284e27E63319F760543F2EBF859643) và tích hợp hàm createEvent vào CreateEventForm.tsx.
 
 B. Đã hoàn thành (Người 2 - Trâm - Sinh viên điểm danh):
 
@@ -232,4 +232,4 @@ C. Đã hoàn thành (Người 3 - Kiệt - Bộ sưu tập cá nhân):
 
 ## 6. TRẠNG THÁI DỰ ÁN (SẴN SÀNG BẢO VỆ ĐỒ ÁN)
 - [x] **Hoàn thiện 100% cả 3 phân hệ:** Ban Tổ Chức (`/admin`) — Sinh Viên Điểm Danh (`/checkin`) — Bộ Sưu Tập Cá Nhân (`/collection`).
-- [x] **Smart Contract (`ClubPOAP.sol` - ERC-5192):** Đã triển khai và kiểm thử thực tế trên mạng **Sepolia Testnet** (`0xaC4eFb69983d3874a9C28C3e7bE1fF33AD6ADF13`).
+- [x] **Smart Contract (`ClubPOAP.sol` - ERC-5192):** Đã triển khai và kiểm thử thực tế trên mạng **Sepolia Testnet** (`0x5D25Ebe07d284e27E63319F760543F2EBF859643`).
