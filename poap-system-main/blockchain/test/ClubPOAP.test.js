@@ -9,11 +9,11 @@ describe("ClubPOAP", function () {
   const TOKEN_URI = "ipfs://QmTestMetadataHash";
 
   async function deployFixture() {
-    const [owner, student1, student2, student3, outsider] = await ethers.getSigners();
+    const [owner, student1, student2, student3, outsider, minter] = await ethers.getSigners();
     const ClubPOAP = await ethers.getContractFactory("ClubPOAP");
     const poap = await ClubPOAP.deploy();
     await poap.waitForDeployment();
-    return { poap, owner, student1, student2, student3, outsider };
+    return { poap, owner, student1, student2, student3, outsider, minter };
   }
 
   describe("Khởi tạo", function () {
@@ -29,10 +29,11 @@ describe("ClubPOAP", function () {
       expect(await poap.isAdmin(owner.address)).to.equal(true);
     });
 
-    it("hai ví Admin cấu hình sẵn trong contract (Tuyền, Trâm) có quyền Admin", async function () {
+    it("các ví Admin cấu hình sẵn trong contract (Tuyền, Trâm, Kiệt) có quyền Admin", async function () {
       const { poap } = await loadFixture(deployFixture);
       expect(await poap.isAdmin("0x4da3b2e88A9930907b1F94922b648EE289235656")).to.equal(true);
       expect(await poap.isAdmin("0xfaA155cD28F66C84eb186dAc13FaF8c095Cf1Fd9")).to.equal(true);
+      expect(await poap.isAdmin("0x19F6f7e08644cbA7E9545666DCc0A2B42cd4e427")).to.equal(true);
     });
 
     it("ví bình thường không phải Admin", async function () {
@@ -74,12 +75,12 @@ describe("ClubPOAP", function () {
     });
   });
 
-  describe("claimBadge", function () {
-    it("sinh viên nhận huy hiệu: mint token 1 về đúng ví, phát sự kiện BadgeClaimed và Locked", async function () {
+  describe("mintBadge (backend mint hộ sinh viên)", function () {
+    it("Admin mint được: token 1 về đúng ví sinh viên, phát BadgeClaimed và Locked", async function () {
       const { poap, student1 } = await loadFixture(deployFixture);
       await poap.createEvent(EVENT_ID, 3);
 
-      await expect(poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI))
+      await expect(poap.mintBadge(student1.address, EVENT_ID, TOKEN_URI))
         .to.emit(poap, "BadgeClaimed")
         .withArgs(EVENT_ID, student1.address, 1n, TOKEN_URI)
         .and.to.emit(poap, "Locked")
@@ -93,63 +94,97 @@ describe("ClubPOAP", function () {
       expect((await poap.events(EVENT_ID)).currentAttendees).to.equal(1);
     });
 
-    it("tokenId tăng dần khi nhiều sinh viên cùng nhận", async function () {
-      const { poap, student1, student2 } = await loadFixture(deployFixture);
+    it("ví minter được owner cấp quyền bằng setAdmin thì mint được, sinh viên không tốn gas", async function () {
+      const { poap, minter, student1 } = await loadFixture(deployFixture);
       await poap.createEvent(EVENT_ID, 3);
-      await poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI);
-      await poap.connect(student2).claimBadge(EVENT_ID, TOKEN_URI);
+      await poap.setAdmin(minter.address, true);
+
+      const before = await ethers.provider.getBalance(student1.address);
+      await poap.connect(minter).mintBadge(student1.address, EVENT_ID, TOKEN_URI);
+      const after = await ethers.provider.getBalance(student1.address);
 
       expect(await poap.ownerOf(1)).to.equal(student1.address);
-      expect(await poap.ownerOf(2)).to.equal(student2.address);
-      expect((await poap.events(EVENT_ID)).currentAttendees).to.equal(2);
+      expect(after).to.equal(before);
     });
 
-    it("cùng một ví không nhận được 2 lần cho cùng một sự kiện", async function () {
+    it("người không phải Admin gọi mintBadge bị revert (kể cả tự mint cho chính mình)", async function () {
+      const { poap, student1, outsider } = await loadFixture(deployFixture);
+      await poap.createEvent(EVENT_ID, 3);
+      await expect(
+        poap.connect(outsider).mintBadge(student1.address, EVENT_ID, TOKEN_URI)
+      ).to.be.revertedWith("ClubPOAP: Khong phai vi Admin");
+      await expect(
+        poap.connect(student1).mintBadge(student1.address, EVENT_ID, TOKEN_URI)
+      ).to.be.revertedWith("ClubPOAP: Khong phai vi Admin");
+    });
+
+    it("ví minter bị gỡ quyền Admin thì không mint được nữa", async function () {
+      const { poap, minter, student1 } = await loadFixture(deployFixture);
+      await poap.createEvent(EVENT_ID, 3);
+      await poap.setAdmin(minter.address, true);
+      await poap.setAdmin(minter.address, false);
+      await expect(
+        poap.connect(minter).mintBadge(student1.address, EVENT_ID, TOKEN_URI)
+      ).to.be.revertedWith("ClubPOAP: Khong phai vi Admin");
+    });
+
+    it("mint trùng cho cùng ví + cùng sự kiện bị revert", async function () {
       const { poap, student1 } = await loadFixture(deployFixture);
       await poap.createEvent(EVENT_ID, 3);
-      await poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI);
-      await expect(poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI)).to.be.revertedWith(
+      await poap.mintBadge(student1.address, EVENT_ID, TOKEN_URI);
+      await expect(poap.mintBadge(student1.address, EVENT_ID, TOKEN_URI)).to.be.revertedWith(
         "ClubPOAP: Vi nay da nhan huy hieu su kien nay"
       );
     });
 
-    it("cùng một ví vẫn nhận được huy hiệu của sự kiện khác", async function () {
-      const { poap, student1 } = await loadFixture(deployFixture);
-      await poap.createEvent(EVENT_ID, 3);
-      await poap.createEvent("event-khac", 3);
-      await poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI);
-      await poap.connect(student1).claimBadge("event-khac", TOKEN_URI);
-      expect(await poap.balanceOf(student1.address)).to.equal(2);
-    });
-
-    it("sự kiện đủ số lượng thì sinh viên tiếp theo bị từ chối", async function () {
+    it("vượt capacity bị revert", async function () {
       const { poap, student1, student2 } = await loadFixture(deployFixture);
       await poap.createEvent(EVENT_ID, 1);
-      await poap.connect(student1).claimBadge(EVENT_ID, TOKEN_URI);
-      await expect(poap.connect(student2).claimBadge(EVENT_ID, TOKEN_URI)).to.be.revertedWith(
+      await poap.mintBadge(student1.address, EVENT_ID, TOKEN_URI);
+      await expect(poap.mintBadge(student2.address, EVENT_ID, TOKEN_URI)).to.be.revertedWith(
         "ClubPOAP: Su kien da du so luong tham du"
       );
     });
 
-    it("từ chối eventId rỗng hoặc tokenURI rỗng", async function () {
+    it("sự kiện chưa đăng ký on-chain bị revert (không còn fallback tự tạo sự kiện)", async function () {
       const { poap, student1 } = await loadFixture(deployFixture);
-      await expect(poap.connect(student1).claimBadge("", TOKEN_URI)).to.be.revertedWith(
+      await expect(
+        poap.mintBadge(student1.address, "su-kien-chua-tao", TOKEN_URI)
+      ).to.be.revertedWith("ClubPOAP: Su kien chua dang ky on-chain");
+      expect((await poap.events("su-kien-chua-tao")).exists).to.equal(false);
+    });
+
+    it("tokenId tăng dần và cùng một ví nhận được huy hiệu của sự kiện khác", async function () {
+      const { poap, student1, student2 } = await loadFixture(deployFixture);
+      await poap.createEvent(EVENT_ID, 3);
+      await poap.createEvent("event-khac", 3);
+      await poap.mintBadge(student1.address, EVENT_ID, TOKEN_URI);
+      await poap.mintBadge(student2.address, EVENT_ID, TOKEN_URI);
+      await poap.mintBadge(student1.address, "event-khac", TOKEN_URI);
+
+      expect(await poap.ownerOf(1)).to.equal(student1.address);
+      expect(await poap.ownerOf(2)).to.equal(student2.address);
+      expect(await poap.ownerOf(3)).to.equal(student1.address);
+      expect(await poap.balanceOf(student1.address)).to.equal(2);
+    });
+
+    it("từ chối ví rỗng, eventId rỗng hoặc tokenURI rỗng", async function () {
+      const { poap, student1 } = await loadFixture(deployFixture);
+      await poap.createEvent(EVENT_ID, 3);
+      await expect(poap.mintBadge(ethers.ZeroAddress, EVENT_ID, TOKEN_URI)).to.be.revertedWith(
+        "ClubPOAP: Vi sinh vien khong hop le"
+      );
+      await expect(poap.mintBadge(student1.address, "", TOKEN_URI)).to.be.revertedWith(
         "ClubPOAP: Thieu eventId"
       );
-      await expect(poap.connect(student1).claimBadge(EVENT_ID, "")).to.be.revertedWith(
+      await expect(poap.mintBadge(student1.address, EVENT_ID, "")).to.be.revertedWith(
         "ClubPOAP: Thieu tokenURI"
       );
     });
 
-    it("sự kiện chưa đăng ký on-chain vẫn nhận được (cơ chế dự phòng, sức chứa mặc định 1000)", async function () {
-      const { poap, student1 } = await loadFixture(deployFixture);
-      await poap.connect(student1).claimBadge("su-kien-chua-tao", TOKEN_URI);
-
-      const info = await poap.events("su-kien-chua-tao");
-      expect(info.exists).to.equal(true);
-      expect(info.capacity).to.equal(1000);
-      expect(info.currentAttendees).to.equal(1);
-      expect(await poap.ownerOf(1)).to.equal(student1.address);
+    it("không còn hàm claimBadge công khai", async function () {
+      const { poap } = await loadFixture(deployFixture);
+      expect(poap.interface.getFunction("claimBadge")).to.equal(null);
     });
   });
 
@@ -157,7 +192,7 @@ describe("ClubPOAP", function () {
     async function claimedFixture() {
       const base = await deployFixture();
       await base.poap.createEvent(EVENT_ID, 3);
-      await base.poap.connect(base.student1).claimBadge(EVENT_ID, TOKEN_URI);
+      await base.poap.mintBadge(base.student1.address, EVENT_ID, TOKEN_URI);
       return base;
     }
 
