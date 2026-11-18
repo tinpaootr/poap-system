@@ -12,7 +12,8 @@ import EventTable from "@/components/admin/EventTable";
 
 const ADMIN_WALLETS = [
   "0x4da3b2e88A9930907b1F94922b648EE289235656", // Ví Tuyen
-  "0xfaa155cd28f66c84eb186dac13faf8c095cf1fd9", // Ví Tram
+  "0xfaa155cd28f66c84eb186dac13faf8c095cf1fd9", // ví tram
+  "0x19F6f7e08644cbA7E9545666DCc0A2B42cd4e427" // Ví Kiet
 ].map((addr) => addr.toLowerCase());
 
 export default function AdminPage() {

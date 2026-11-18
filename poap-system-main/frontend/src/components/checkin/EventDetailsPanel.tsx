@@ -2,11 +2,11 @@
 import { API_BASE } from '@/lib/apiBase';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAccount, useSignMessage, useWriteContract, usePublicClient } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import axios from 'axios';
-import contractABI from '../../lib/contractABI.json';
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+// Backend đúc huy hiệu hộ (chờ Sepolia xác nhận ~10-30 giây) -> cho phép chờ lâu hơn bình thường
+const MINT_REQUEST_TIMEOUT_MS = 150_000;
 
 interface EventDetailsProps {
   isScanned: boolean;
@@ -47,8 +47,6 @@ export default function EventDetailsPanel({
 }: EventDetailsProps) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient();
 
   // State lưu thông tin nhập liệu của sinh viên
   const [studentId, setStudentId] = useState('');
@@ -57,6 +55,16 @@ export default function EventDetailsPanel({
   const [errorMessage, setErrorMessage] = useState('');
   const [txHash, setTxHash] = useState('');
   const [statusText, setStatusText] = useState('');
+  const [mintNote, setMintNote] = useState(''); // ghi chú khi giao dịch xác nhận chậm
+  const [elapsed, setElapsed] = useState(0);    // số giây đã chờ backend đúc huy hiệu
+  const [mintStartedAt, setMintStartedAt] = useState(0);
+
+  // Đếm giây trong lúc chờ backend đúc huy hiệu
+  useEffect(() => {
+    if (mintState !== 'processing' || !mintStartedAt) return;
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - mintStartedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [mintState, mintStartedAt]);
 
   // Ví đã gắn với 1 sinh viên -> khóa ô MSSV, Họ tên và Lớp
   const [isLocked, setIsLocked] = useState(false);
@@ -159,58 +167,42 @@ export default function EventDetailsPanel({
         return;
       }
 
-      // 3. Gửi mã QR + chữ ký lên backend
-      setStatusText('Đang xác thực điểm danh...');
-      const response = await axios.post(`${API_BASE}/events/student-checkin`, {
-        eventId: scannedEventId || null, // null -> Backend tự dò sự kiện theo token
-        qrToken: tokenOrCodeToVerify,
-        walletAddress: address,
-        signature
-      });
-
-      const { tokenURI, claimTicket } = response.data;
-      console.log('Xác thực Backend thành công, lấy được tokenURI:', tokenURI);
-
-      // 4. Backend OK rồi mới bật hiệu ứng processing
+      // 3. Gửi mã QR + chữ ký lên backend. Backend kiểm tra xong sẽ tự đúc huy hiệu
+      //    về ví sinh viên bằng ví minter của ban tổ chức (sinh viên KHÔNG trả gas).
       setStatusText('');
-      onMint();
+      setMintNote('');
+      setElapsed(0);
+      setMintStartedAt(Date.now());
+      onMint(); // hiện trạng thái "Đang đúc huy hiệu..."
       processingStarted = true;
 
-      // 5. Gọi Smart Contract đúc Soulbound NFT trên Sepolia
-      if (!CONTRACT_ADDRESS) {
-        throw new Error('Thiếu NEXT_PUBLIC_CONTRACT_ADDRESS trong .env.local');
+      const response = await axios.post(
+        `${API_BASE}/events/student-checkin`,
+        {
+          eventId: scannedEventId || null, // null -> Backend tự dò sự kiện theo token
+          qrToken: tokenOrCodeToVerify,
+          walletAddress: address,
+          signature
+        },
+        { timeout: MINT_REQUEST_TIMEOUT_MS }
+      );
+
+      const data = response.data || {};
+      if (!data.txHash) {
+        throw new Error('Server không trả về mã giao dịch.');
       }
 
-      const onChainEventId = String(response.data.eventId || response.data.event?._id);
-
-      setStatusText('Vui lòng xác nhận giao dịch nhận huy hiệu trong MetaMask...');
-      const mintedTxHash = await writeContractAsync({
-        address: CONTRACT_ADDRESS,
-        abi: contractABI,
-        functionName: 'claimBadge',
-        args: [onChainEventId, tokenURI],
-      });
-
-      setStatusText('Đang chờ Sepolia xác nhận giao dịch...');
-      const receipt = await publicClient?.waitForTransactionReceipt({ hash: mintedTxHash });
-      if (receipt && receipt.status !== 'success') {
-        throw new Error('Giao dịch nhận huy hiệu bị từ chối trên blockchain.');
+      // 202: giao dịch đã gửi nhưng Sepolia xác nhận chậm -> backend sẽ tự ghi nhận sau
+      if (data.pending) {
+        setMintNote(data.error || 'Giao dịch đang chờ Sepolia xác nhận, huy hiệu sẽ hiện trong Bộ sưu tập sau ít phút.');
       }
-      setStatusText('');
 
-      // 6. Ghi nhận lịch sử: chỉ gửi vé dùng 1 lần + txHash thật
-      await axios.post(`${API_BASE}/events/record-success`, {
-        claimTicket,
-        txHash: mintedTxHash
-      });
-
-      // 7. Chuyển sang trạng thái thành công
-      setTxHash(mintedTxHash);
+      // 4. Thành công -> hiện txHash + link Etherscan
+      setTxHash(data.txHash);
       saveStudentInfo();
-      onMintSuccess?.(response.data.event);
+      onMintSuccess?.(data.event);
     } catch (error: any) {
       let errorMsg = 'Lỗi kết nối server khi điểm danh!';
-      const chainMsg = String(error?.shortMessage || error?.message || '');
 
       if (axios.isAxiosError(error) && error.response) {
         const status = error.response.status;
@@ -222,22 +214,20 @@ export default function EventDetailsPanel({
           errorMsg = serverMsg || 'Xác thực chữ ký ví thất bại, vui lòng thử lại!';
         } else if (status === 400 || status === 404) {
           errorMsg = serverMsg || 'Mã check-in không hợp lệ hoặc sự kiện không tồn tại!';
+        } else if (status === 502 || status === 503) {
+          errorMsg = serverMsg || 'Hệ thống đúc huy hiệu đang gặp sự cố, vui lòng báo ban tổ chức.';
         } else {
           errorMsg = serverMsg || `Lỗi server (${status}), vui lòng thử lại!`;
         }
+      } else if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+        errorMsg = 'Server phản hồi quá lâu. Hãy kiểm tra Bộ sưu tập sau ít phút trước khi thử lại.';
       } else if (axios.isAxiosError(error) && error.request) {
         errorMsg = 'Không kết nối được server. Backend đã chạy chưa?';
-      } else if (error?.name === 'UserRejectedRequestError' || /user rejected|denied/i.test(chainMsg)) {
-        errorMsg = 'Bạn đã từ chối giao dịch trong MetaMask.';
-      } else if (/insufficient funds/i.test(chainMsg)) {
-        errorMsg = 'Ví không đủ ETH Sepolia để trả phí gas.';
-      } else if (/da nhan huy hieu/i.test(chainMsg)) {
-        errorMsg = 'Ví này đã nhận huy hiệu của sự kiện này trên blockchain rồi.';
-      } else if (chainMsg) {
-        errorMsg = chainMsg;
+      } else if (error?.message) {
+        errorMsg = error.message;
       }
 
-      console.warn('Lỗi khi claim:', error);
+      console.warn('Lỗi khi nhận huy hiệu:', error);
       setStatusText('');
       if (processingStarted) onMintError?.();
       setErrorMessage(errorMsg);
@@ -420,7 +410,7 @@ export default function EventDetailsPanel({
             <span>{mintState === 'success' ? 'Đã nhận huy hiệu' : 'Nhận Huy Hiệu (Claim POAP / SBT)'}</span>
             <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
           </button>
-          <span className="text-center text-[11px] text-slate-500">Phí mạng (Gas fee): Trả bằng ETH Sepolia testnet (miễn phí khi test)</span>
+          <span className="text-center text-[11px] text-slate-500">Phí mạng (Gas fee): Miễn phí – ban tổ chức trả thay bạn. Bạn chỉ cần ký xác nhận trong MetaMask.</span>
         </div>
       )}
 
@@ -432,7 +422,8 @@ export default function EventDetailsPanel({
               <span className="material-symbols-outlined text-indigo-400 text-[20px] absolute">token</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-white">Đang Ký Giao Dịch Sepolia...</span>
+              <span className="text-sm font-semibold text-white">Đang đúc huy hiệu... ({elapsed}s)</span>
+              <span className="text-[11px] text-slate-400">Hệ thống đang ghi huy hiệu lên Sepolia, thường mất 10–30 giây. Bạn không cần trả phí gas.</span>
               <span className="text-[11px] text-cyan-400 animate-pulse">Vui lòng không đóng hoặc tải lại trang</span>
             </div>
           </div>
@@ -451,9 +442,17 @@ export default function EventDetailsPanel({
             </div>
             <div className="flex flex-col">
               <span className="text-lg font-bold text-white">Điểm Danh Thành Công!</span>
-              <span className="text-xs font-semibold text-emerald-400">Huy hiệu Soulbound đã được ghi nhận vào ví</span>
+              <span className="text-xs font-semibold text-emerald-400">
+                {mintNote ? 'Giao dịch đã được gửi lên Sepolia' : 'Huy hiệu Soulbound đã được đúc về ví của bạn'}
+              </span>
             </div>
           </div>
+
+          {mintNote && (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+              {mintNote}
+            </div>
+          )}
 
           <div className="flex items-center gap-4 p-4 rounded-xl bg-[#0b1326] border border-slate-800">
             {eventData?.ipfsImageHash ? (
@@ -466,7 +465,18 @@ export default function EventDetailsPanel({
             <div className="flex flex-col min-w-0 flex-1">
               <span className="text-sm font-semibold text-white truncate">{eventData?.name || 'Huy hiệu Soulbound'}</span>
               <span className="text-[11px] text-slate-400">Chuẩn ERC-5192 (Locked Soulbound)</span>
-              <span className="text-[11px] text-indigo-400 font-mono truncate mt-0.5">Tx: {shortTx || '—'}</span>
+              {isRealTx ? (
+                <a
+                  href={`https://sepolia.etherscan.io/tx/${txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={txHash}
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 font-mono truncate mt-0.5 underline-offset-2 hover:underline">
+                  Tx: {shortTx}
+                </a>
+              ) : (
+                <span className="text-[11px] text-indigo-400 font-mono truncate mt-0.5">Tx: {shortTx || '—'}</span>
+              )}
             </div>
           </div>
 

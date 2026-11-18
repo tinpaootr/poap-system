@@ -15,6 +15,7 @@ import {
   Eye,
 } from "lucide-react";
 import { ClubEvent, EventStatus } from "./types";
+import OnchainEventStatus from "./OnchainEventStatus";
 
 interface EventTableProps {
   events: ClubEvent[];
@@ -233,6 +234,9 @@ export default function EventTable({
                             ID: {ev._id} • Contract:{" "}
                             {ev.contractAddress || "Chưa triển khai"}
                           </span>
+                          <div className="mt-1">
+                            <OnchainEventStatus eventId={ev._id} capacity={ev.capacity} />
+                          </div>
                         </div>
                       </div>
                     </td>
